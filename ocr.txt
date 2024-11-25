@@ -1022,7 +1022,7 @@ base_directory = r"all chemin\data"
 start_monitoring(base_directory)
 
 ___________________________ 251124
- import os
+import os
 from PyPDF2 import PdfReader
 import re
 from docx import Document
@@ -1031,10 +1031,10 @@ from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 import pypandoc
 
 # Chemin du dossier contenant les fichiers PDF
-pdf_directory = r"\input"
+pdf_directory = r"swift\data\1124\20112024\entrant\MT910\input"
 
 # Chemin du dossier de sortie
-output_directory = r"\output"
+output_directory = r"swift\data\1124\20112024\entrant\MT910\output"
 
 # Fonction pour extraire le texte du PDF
 def extract_text_from_pdf(pdf_path):
@@ -1055,14 +1055,28 @@ def extract_faite_nous_confiance(text):
     return before_faite_text, after_faite_text
 
 # Fonction pour extraire les lignes 20 et 32A
+# Fonction pour extraire les lignes 20 et 32A
 def extract_lines_20_32A(text):
-    line_20 = re.search(r'20:\s*Sender\'s Reference(.*?)(?=\n\d{2}[A-Z]:|$)', text, re.DOTALL)
-    line_20_text = line_20.group(0).strip() if line_20 else "Aucune ligne trouvée pour '20:'."
+    # Ligne 20: Capturer les références multi-lignes
+    line_20 = re.search(r'20:\s+Sender\'s Reference\s+([\s\S]*?)\n\d{2}[A-Z]:', text)
+    if line_20:
+        line_20_text = f"20: Sender's Reference\n{line_20.group(1).strip()}"
+    else:
+        line_20_text = "Aucune ligne trouvée pour '20:'."
 
-    line_32A = re.search(r'32A:\s*Val Dte/Curr/Interbnk Settld Amt(.*?)(?=\n\d{2}[A-Z]:|$)', text, re.DOTALL)
-    line_32A_text = line_32A.group(0).strip() if line_32A else "Aucune ligne trouvée pour '32A:'."
+    # Ligne 32A: Capturer les détails de la date, devise et montant
+    line_32A = re.search(
+        r'32A:\s+Val Dte/Curr/Interbnk Settld Amt\s+Date\s*:\s*(.+?)\s+Currency\s*:\s*(.+?)\s+Amount\s*:\s*#(.+?)#',
+        text, re.DOTALL
+    )
+    if line_32A:
+        date, currency, amount = line_32A.groups()
+        line_32A_text = f"32A: Val Dte/Curr/Interbnk Settld Amt\nDate: {date.strip()}\nCurrency: {currency.strip()}\nAmount: {amount.strip()}"
+    else:
+        line_32A_text = "Aucune ligne trouvée pour '32A:'."
 
     return line_20_text, line_32A_text
+
 
 # Fonction pour extraire les infos spécifiques de 72A et 72B
 def extract_info_72(text):
@@ -1128,4 +1142,3 @@ def process_pdfs_in_directory(pdf_directory, output_directory):
 
 # Exécuter le traitement sur les fichiers PDF
 process_pdfs_in_directory(pdf_directory, output_directory)
-
