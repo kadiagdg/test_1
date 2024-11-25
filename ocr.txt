@@ -1021,5 +1021,111 @@ def start_monitoring(base_directory):
 base_directory = r"all chemin\data"
 start_monitoring(base_directory)
 
+___________________________ 251124
+ import os
+from PyPDF2 import PdfReader
+import re
+from docx import Document
+from docx.shared import Inches
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+import pypandoc
 
+# Chemin du dossier contenant les fichiers PDF
+pdf_directory = r"\input"
+
+# Chemin du dossier de sortie
+output_directory = r"\output"
+
+# Fonction pour extraire le texte du PDF
+def extract_text_from_pdf(pdf_path):
+    reader = PdfReader(pdf_path)
+    text = ""
+    for page in reader.pages:
+        text += page.extract_text()
+    return text
+
+# Fonction pour extraire les informations avant et après "Faite nous confiance"
+def extract_faite_nous_confiance(text):
+    before_faite_match = re.search(r'(.*?)Faite nous confiance', text, re.DOTALL)
+    before_faite_text = before_faite_match.group(1).strip() if before_faite_match else "Aucune ligne trouvée avant 'Faite nous confiance'."
+
+    after_faite_match = re.search(r'Faite nous confiance(.*?)Message Text', text, re.DOTALL)
+    after_faite_text = after_faite_match.group(1).strip() if after_faite_match else "Aucune ligne trouvée entre 'Faite nous confiance' et 'Message Text'."
+
+    return before_faite_text, after_faite_text
+
+# Fonction pour extraire les lignes 20 et 32A
+def extract_lines_20_32A(text):
+    line_20 = re.search(r'20:\s*Sender\'s Reference(.*?)(?=\n\d{2}[A-Z]:|$)', text, re.DOTALL)
+    line_20_text = line_20.group(0).strip() if line_20 else "Aucune ligne trouvée pour '20:'."
+
+    line_32A = re.search(r'32A:\s*Val Dte/Curr/Interbnk Settld Amt(.*?)(?=\n\d{2}[A-Z]:|$)', text, re.DOTALL)
+    line_32A_text = line_32A.group(0).strip() if line_32A else "Aucune ligne trouvée pour '32A:'."
+
+    return line_20_text, line_32A_text
+
+# Fonction pour extraire les infos spécifiques de 72A et 72B
+def extract_info_72(text):
+    text_cleaned = re.sub(r'\s+', ' ', text).strip()
+
+    match_72A = re.search(r'ORDP\s*/(.*?)\/BENM', text_cleaned)
+    info_72A = match_72A.group(1).strip() if match_72A else None
+
+    match_72B = re.search(r"/BENM/(.*?)\/FOR", text_cleaned)
+    info_72B = match_72B.group(1).strip() if match_72B else None
+
+    return info_72A, info_72B
+
+# Fonction pour extraire les informations après 'Message Trailer'
+def extract_after_message_trailer(text):
+    after_message_trailer = re.search(r'(Message Trailer.*)', text, re.DOTALL)
+    return after_message_trailer.group(1).strip() if after_message_trailer else "Aucune ligne trouvée après 'Message Trailer'."
+
+# Fonction principale pour traiter tous les fichiers PDF dans le dossier
+def process_pdfs_in_directory(pdf_directory, output_directory):
+    # Créer le répertoire de sortie s'il n'existe pas
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
+
+    # Parcourir tous les fichiers PDF dans le répertoire
+    for filename in os.listdir(pdf_directory):
+        if filename.endswith(".pdf"):
+            base_filename = os.path.splitext(filename)[0]
+            docx_path = os.path.join(output_directory, f"{base_filename}.docx")
+            pdf_output_path = os.path.join(output_directory, f"{base_filename}.pdf")
+
+            # Vérifier si le fichier existe déjà dans le dossier de sortie
+            if os.path.exists(docx_path) or os.path.exists(pdf_output_path):
+                print(f"Le fichier {filename} a déjà été traité. Ignoré.")
+                continue
+
+            pdf_path = os.path.join(pdf_directory, filename)
+            print(f"Traitement du fichier : {filename}")
+            
+            # Extraction du texte du fichier PDF
+            text = extract_text_from_pdf(pdf_path)
+            
+            # Vérifier si la ligne 72 existe dans le texte
+            info_72A, info_72B = extract_info_72(text)
+            if not info_72A or not info_72B:  # Si la ligne 72A ou 72B est absente
+                print(f"Le fichier {filename} ne contient pas la ligne 72. Ignoré.")
+                continue
+
+            # Extraction des autres informations spécifiques
+            before_faite_text, after_faite_text = extract_faite_nous_confiance(text)
+            line_20_text, line_32A_text = extract_lines_20_32A(text)
+            after_message_trailer_text = extract_after_message_trailer(text)
+             # Affichage des résultats
+    print("\nInformations avant 'Faite nous confiance':")
+    print(extract_faite_nous_confiance)
+    print(line_20_text)
+    print(line_32A_text)
+    print(f"72A(50 F): {info_72A}")
+    print(f"72B(59): {info_72B}")
+    print(after_message_trailer_text)
+
+
+
+# Exécuter le traitement sur les fichiers PDF
+process_pdfs_in_directory(pdf_directory, output_directory)
 
