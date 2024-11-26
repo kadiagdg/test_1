@@ -1203,3 +1203,59 @@ Citations:
 [8] https://rm.coe.int/t-pd-201-01-guide-pratique-sur-lutilisation-de-donnees-a-caractere-per/16807927d6
 [9] https://www.talend.com/fr/resources/what-is-data-security/
 [10] https://entreprendre.service-public.fr/vosdroits/F24270
+
+
+
+-------------------------------------------------------
+def extract_lines_20_32A(text):
+    # Ligne 20: Transaction Reference Number
+    line_20 = re.search(r'20:\s*Transaction Reference Number\s*(\w+)', text)
+    if line_20:
+        line_20_text = f"20:\tTransaction Reference Number\n{line_20.group(1)}"
+    else:
+        line_20_text = "Aucune ligne trouvée pour '20:'."
+
+    # Ligne 32A: Val Dte/Curr/Interbnk Settld Amt
+    line_32A = re.search(r'32A:\s*Val Dte/Curr/Interbnk Settld Amt\s*Date\s*:\s*(.*?)\s*Currency\s*:\s*(.*?)\s*Amount\s*:\s*#(.*?)#', text, re.DOTALL)
+    if line_32A:
+        line_32A_text = (
+            "32A:\tVal Dte/Curr/Interbnk Settld Amt\n"
+            f"Date :\t {line_32A.group(1)}\n"
+            f"Currency : {line_32A.group(2)}\n"
+            f"Amount : #{line_32A.group(3)}#"
+        )
+    else:
+        line_32A_text = "Aucune ligne trouvée pour '32A:'."
+
+    return line_20_text, line_32A_text
+
+
+_______________ def extract_lines_20_32A(text):
+    # Ligne 20: Transaction Reference Number
+    line_20 = re.search(r'20:\s*Transaction Reference Number\s*(\w+)', text)
+    if line_20:
+        line_20_text = f"20:\tTransaction Reference Number\n{line_20.group(1)}"
+    else:
+        line_20_text = "Aucune ligne trouvée pour '20:'."
+
+    # Ligne 32A: Val Dte/Curr/Interbnk Settld Amt
+    line_32A_structured = re.search(
+        r'32A:\s*Val Dte/Curr/Interbnk Settld Amt\s*Date\s*:\s*(.*?)\s*Currency\s*:\s*(.*?)\s*Amount\s*:\s*#(.*?)#',
+        text,
+        re.DOTALL
+    )
+    line_32A_simple = re.search(r'32A:\s*(\w+)', text)
+
+    if line_32A_structured:
+        line_32A_text = (
+            "32A:\tVal Dte/Curr/Interbnk Settld Amt\n"
+            f"Date :\t {line_32A_structured.group(1)}\n"
+            f"Currency : {line_32A_structured.group(2)}\n"
+            f"Amount : #{line_32A_structured.group(3)}#"
+        )
+    elif line_32A_simple:
+        line_32A_text = f"32A:\t{line_32A_simple.group(1)}"
+    else:
+        line_32A_text = "Aucune ligne trouvée pour '32A:'."
+
+    return line_20_text, line_32A_text
