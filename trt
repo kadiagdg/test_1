@@ -1,0 +1,62 @@
+Mettre en place une procédure complète pour la gestion des données sensibles et non sensibles extraites du Data Warehouse (DWH), incluant les étapes d'extraction, traitement, sécurisation et stockage. Voici deux approches envisageables pour la sécurisation via chiffrement : 
+
+1. **Chiffrement des données sensibles sur le serveur de traitement avant enrichissement des serveurs de production et d’homologation :**  
+   - Les dossiers contenant les données brutes extraites et les colonnes sensibles sont chiffrés dès leur arrivée sur le serveur de développement (serveur de traitement).  
+   - Après le traitement et l'enrichissement des données, les résultats (outputs) sont transférés vers les serveurs de production et d’homologation pour être utilisés.  
+   - Le chiffrement des fichiers et répertoires sur le serveur de traitement est assuré par les data engineers.  
+
+2. **Chiffrement des données sensibles directement sur les serveurs de production et d’homologation :**  
+   - Les données brutes extraites du DWH sont stockées dans des dossiers chiffrés dès leur arrivée sur les serveurs de production et d’homologation.  
+   - Le traitement des données est effectué directement dans ces environnements sécurisés.  
+   - Les résultats (outputs) sont également sauvegardés dans des dossiers chiffrés pour garantir la confidentialité.  
+   - Le chiffrement des répertoires et fichiers est, ici aussi, géré par les data engineers.
+
+Le chiffrement doit être basé sur des protocoles robustes, et les clés de chiffrement doivent être stockées et gérées de manière sécurisée. Cette procédure vise à garantir la confidentialité et l'intégrité des données sensibles tout au long du cycle de vie des données.
+---------------------
+Voici une analyse des avantages et des inconvénients des deux approches proposées pour sécuriser les données sensibles extraites du Data Warehouse (DWH) :  
+
+---
+
+### **1. Chiffrement sur le serveur de traitement avant enrichissement des serveurs de production et d’homologation**
+
+**Avantages :**  
+- **Sécurisation précoce** : Les données sensibles sont chiffrées dès leur arrivée sur le serveur de traitement, minimisant les risques pendant leur manipulation initiale.  
+- **Centralisation du traitement** : Permet une gestion simplifiée des pipelines de données, car tout le traitement se fait sur un seul serveur avant le transfert vers d'autres environnements.  
+- **Isolation des environnements** : Les serveurs de production et d’homologation reçoivent des données déjà traitées, limitant leur exposition à des fichiers bruts sensibles.  
+- **Contrôle facilité** : Les data engineers peuvent gérer le chiffrement et le traitement dans un environnement unique.  
+
+**Inconvénients :**  
+- **Risque de transit** : Les données chiffrées doivent être transférées vers d’autres environnements après traitement, ce qui peut introduire des vulnérabilités si le transport n’est pas bien sécurisé.  
+- **Charge sur le serveur de traitement** : Une charge élevée peut ralentir le traitement, car le chiffrement et le déchiffrement nécessitent des ressources importantes.  
+- **Complexité des clés de chiffrement** : La gestion des clés sur un environnement intermédiaire (serveur de traitement) peut ajouter des défis en termes de sécurité et d’organisation.  
+
+---
+
+### **2. Chiffrement directement sur les serveurs de production et d’homologation**
+
+**Avantages :**  
+- **Sécurité accrue dans l’environnement cible** : Les données sensibles sont directement chiffrées sur les serveurs finaux, réduisant le risque de compromission durant leur transfert ou stockage intermédiaire.  
+- **Traitement en environnement sécurisé** : Toutes les opérations sur les données sensibles se font dans des environnements où elles sont protégées, sans besoin de transfert supplémentaire.  
+- **Simplification du chiffrement des outputs** : Les résultats sont déjà chiffrés sur place, ce qui élimine la nécessité de gérer un chiffrement secondaire après le traitement.  
+
+**Inconvénients :**  
+- **Charge sur les serveurs finaux** : Le traitement des données dans des environnements de production peut ralentir les systèmes critiques, surtout si les opérations sont intensives.  
+- **Complexité organisationnelle** : Travailler avec plusieurs environnements chiffrés peut compliquer la gestion des clés et le contrôle des accès.  
+- **Dépendance accrue aux serveurs finaux** : Toute interruption ou maintenance sur les serveurs de production ou d’homologation pourrait retarder les traitements nécessaires.  
+- **Isolation réduite** : Les serveurs de production et d’homologation exposent leurs ressources directement au traitement des données brutes, augmentant potentiellement les risques liés à des erreurs humaines ou des attaques.  
+
+---
+
+### **Résumé comparatif :**
+
+| Critère                | Chiffrement sur serveur de traitement          | Chiffrement sur serveurs de production/homologation |
+|------------------------|-----------------------------------------------|---------------------------------------------------|
+| **Sécurité initiale**  | Très bonne                                    | Bonne                                            |
+| **Facilité de gestion**| Simplifiée, centralisée                       | Complexifiée par les environnements multiples    |
+| **Performance**        | Peut être ralentie sur le serveur de traitement| Impact sur les systèmes critiques               |
+| **Risques**            | Exposition lors du transfert                  | Exposition pendant le traitement direct          |
+| **Simplicité des clés**| Plus simple à gérer                           | Plus complexe en multi-environnements            |
+
+### **Choix recommandé :**  
+- Si la centralisation et un flux simplifié sont prioritaires : **Approche 1** (chiffrement sur le serveur de traitement).  
+- Si la priorité est de minimiser les risques liés au transport des données : **Approche 2** (chiffrement sur les serveurs finaux).  
