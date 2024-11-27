@@ -1259,3 +1259,99 @@ _______________ def extract_lines_20_32A(text):
         line_32A_text = "Aucune ligne trouvée pour '32A:'."
 
     return line_20_text, line_32A_text
+
+________________________________________________ 
+from PyPDF2 import PdfReader
+import re
+
+# Fonction pour extraire le texte du PDF
+def extract_text_from_pdf(pdf_path):
+    reader = PdfReader(pdf_path)
+    text = ""
+    for page in reader.pages:
+        text += page.extract_text()
+    return text
+
+# Fonction pour extraire les informations avant et après "Faite nous confiance"
+def extract_faite_nous_confiance(text):
+    before_faite_match = re.search(r'(.*?)Faite nous confiance', text, re.DOTALL)
+    before_faite_text = before_faite_match.group(1).strip() if before_faite_match else "Aucune ligne trouvée avant 'Faite nous confiance'."
+
+    after_faite_match = re.search(r'Faite nous confiance(.*?)Message Text', text, re.DOTALL)
+    after_faite_text = after_faite_match.group(0).strip() if after_faite_match else "Aucune ligne trouvée entre 'Faite nous confiance' et 'Message Text'."
+
+    return before_faite_text, after_faite_text
+
+# Fonction pour extraire les lignes 20 et 32A
+def extract_lines_20_and_32A(text):
+    # Ligne 20
+    line_20 = re.search(r'20:\s*Transaction Reference Number\s*(\w+)', text)
+    if line_20:
+        line_20_text = f"20:\tTransaction Reference Number\n{line_20.group(1)}"
+    else:
+        line_20_text = "Aucune ligne trouvée pour '20:'."
+
+    # Ligne 32A
+    match_32A_structured = re.search(
+        r'32A:\s*Value Date, Currency Code\s*,\s*Amt\s*Date\s*:\s*(.*?)\s*Currency\s*:\s*(.*?)\s*Amount\s*:\s*#(.*?)#',
+        text,
+        re.DOTALL | re.IGNORECASE
+    )
+    if match_32A_structured:
+        date = match_32A_structured.group(1).strip()
+        currency = match_32A_structured.group(2).strip()
+        amount = match_32A_structured.group(3).strip()
+        line_32A_text = (
+            f"32A:\tValue Date, Currency Code, Amt\n"
+            f"Date :\t {date}\n"
+            f"Currency : {currency}\n"
+            f"Amount : #{amount}#"
+        )
+    else:
+        # Recherche des lignes simples pour 32A
+        match_32A_simple = re.search(r'32A:\s*(.*)', text, re.IGNORECASE)
+        line_32A_text = f"32A:\t{match_32A_simple.group(1).strip()}" if match_32A_simple else "Aucune ligne trouvée pour '32A:'."
+
+    return line_20_text, line_32A_text
+
+# Fonction pour extraire les informations spécifiques de 72A et 72B
+def extract_info_72(text):
+    text_cleaned = re.sub(r'\s+', ' ', text).strip()
+
+    match_72A = re.search(r'ORxx\s*/(.*?)\/BExx', text_cleaned)
+    info_72A = match_72A.group(1).strip() if match_72A else "Aucune information trouvée pour 72A."
+
+    match_72B = re.search(r"/BExx/(.*?)\/FOR", text_cleaned)
+    info_72B = match_72B.group(1).strip() if match_72B else "Aucune information trouvée pour 72B."
+
+    return info_72A, info_72B
+
+# Fonction pour extraire les informations après "Message Trailer"
+def extract_after_message_trailer(text):
+    after_message_trailer = re.search(r'(Message Trailer.*)', text, re.DOTALL)
+    return after_message_trailer.group(1).strip() if after_message_trailer else "Aucune ligne trouvée après 'Message Trailer'."
+
+# Extraction du texte depuis le PDF
+text = extract_text_from_pdf(pdf_path)
+
+# Extraction des informations
+before_faite_text, after_faite_text = extract_faite_nous_confiance(text)
+line_20_text, line_32A_text = extract_lines_20_and_32A(text)
+info_72A, info_72B = extract_info_72(text)
+after_message_trailer_text = extract_after_message_trailer(text)
+
+# Affichage des résultats
+print("\nInformations avant 'Faite nous confiance':")
+print(before_faite_text)
+print("\nInformations après 'Faite nous confiance':")
+print(after_faite_text)
+print("\nInformations Ligne 20:")
+print(line_20_text)
+print("\nInformations Ligne 32A:")
+print(line_32A_text)
+print("\nInformations spécifiques 72:")
+print(f"72A: {info_72A}")
+print(f"72B: {info_72B}")
+print("\nInformations après 'Message Trailer':")
+print(after_message_trailer_text)
+
