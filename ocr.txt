@@ -1355,3 +1355,92 @@ print(f"72B: {info_72B}")
 print("\nInformations après 'Message Trailer':")
 print(after_message_trailer_text)
 
+______________________________________________
+import pandas as pd
+import numpy as np
+
+# Exemple de DataFrame
+data = {
+    'id': [1, 1, 2, 2, 3],
+    'nom': ['Alice', 'Alice', 'Bob', 'Bob', 'Charlie'],
+    'montant': [np.nan, 100, np.nan, 200, 300],
+    'description': [np.nan, 'Paiement', np.nan, 'Remboursement', 'Achat'],
+    'date': [np.nan, '2024-12-01', np.nan, '2024-12-02', '2024-12-03'],
+    'autre_colonne1': ['val1', 'val1', 'val2', 'val2', 'val3'],
+    'autre_colonne2': ['A', 'A', 'B', 'B', 'C'],
+    # Ajoutez d'autres colonnes si nécessaire
+}
+
+df = pd.DataFrame(data)
+
+# Liste des colonnes à vérifier pour les valeurs non nulles
+columns_to_check = ['montant', 'description', 'date']
+
+# Liste des colonnes pour le regroupement (toutes sauf celles à vérifier)
+groupby_columns = [col for col in df.columns if col not in columns_to_check]
+
+# Grouper par les colonnes spécifiques et combiner les données
+df_cleaned = (
+    df.groupby(groupby_columns, as_index=False)  # Grouper par toutes les colonnes sauf celles à vérifier
+    .agg(
+        {col: 'last' for col in columns_to_check}  # Garder la dernière valeur non nulle pour les colonnes importantes
+    )
+)
+
+print("Avant correction :")
+print(df)
+
+print("\nAprès correction :")
+print(df_cleaned)
+___________________________________________________________________________
+Avec ces colonnes, on peut proposer plusieurs indicateurs pertinents pour un reporting. Voici une liste organisée par thématiques :
+
+### **Indicateurs de volumes et de suivi des demandes**
+1. **Nombre total de demandes** : Basé sur la colonne `référence`.
+2. **Nombre de demandes par créateur** : Regroupement par `créateur`.
+3. **Nombre de demandes par état** : Basé sur la colonne `état` (e.g., en cours, clôturé, rejeté).
+4. **Répartition par type de demande** : Basé sur la colonne `type`.
+5. **Nombre de rejets** : Compté à partir des valeurs dans `motif de rejet`.
+6. **Répartition des demandes par canal de réception** : Basé sur `canal de réception`.
+7. **Répartition des demandes par agence** : Basé sur `agence`.
+
+---
+
+### **Indicateurs de délai et efficacité**
+8. **Durée moyenne de traitement globale** : Moyenne de `durée de traitement`.
+9. **Durée moyenne par état** : Moyenne de `durée de traitement` regroupée par `état`.
+10. **Durée moyenne par groupe de résolution** : Moyenne de `durée de traitement` par `gpe de résolution`.
+11. **Temps moyen d'étude technique** : Moyenne de `temps étude techniques`.
+12. **Temps moyen de traitement support** : Moyenne de `temps support`.
+13. **Durée moyenne par segment client** : Moyenne de `durée de traitement` regroupée par `segment client`.
+
+---
+
+### **Indicateurs financiers**
+14. **Montant total traité** : Somme de `montant`.
+15. **Montant moyen par demande** : Moyenne de `montant`.
+16. **Répartition des montants par devise** : Basé sur `devise du montant`.
+17. **Montant total rejeté** : Somme de `montant` des demandes ayant un `motif de rejet`.
+
+---
+
+### **Indicateurs de typologie et segmentation**
+18. **Répartition des demandes par typologie** : Basé sur `typologie`.
+19. **Nombre de demandes par secteur d'activité** : Regroupement par `secteur d'activité`.
+20. **Répartition par segment client** : Basé sur `segment client`.
+
+---
+
+### **Indicateurs de performance par acteur**
+21. **Durée moyenne de traitement par assistant comptable** : Moyenne de `durée traitements assistant comptable`.
+22. **Durée moyenne de traitement tiers** : Moyenne de `durée du traitement tiers`.
+23. **Temps total traité par support** : Somme de `temps traité`.
+
+---
+
+### **Indicateurs spécifiques**
+24. **Pourcentage de demandes traitées immédiatement** : Ratio basé sur la colonne `traitement immédiat`.
+25. **Taux de notification réussie** : Calculé à partir du `canal de notification`.
+26. **Temps de résolution moyen par motif** : Moyenne de `durée de résolution` regroupée par `motif`.
+
+Ces indicateurs peuvent être enrichis avec des analyses croisées (par exemple : durée moyenne par type et état) ou des tendances temporelles (évolution mensuelle des volumes, délais, etc.).
