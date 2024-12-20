@@ -1393,54 +1393,107 @@ print(df)
 print("\nAprès correction :")
 print(df_cleaned)
 ___________________________________________________________________________
-Avec ces colonnes, on peut proposer plusieurs indicateurs pertinents pour un reporting. Voici une liste organisée par thématiques :
 
-### **Indicateurs de volumes et de suivi des demandes**
-1. **Nombre total de demandes** : Basé sur la colonne `référence`.
-2. **Nombre de demandes par créateur** : Regroupement par `créateur`.
-3. **Nombre de demandes par état** : Basé sur la colonne `état` (e.g., en cours, clôturé, rejeté).
-4. **Répartition par type de demande** : Basé sur la colonne `type`.
-5. **Nombre de rejets** : Compté à partir des valeurs dans `motif de rejet`.
-6. **Répartition des demandes par canal de réception** : Basé sur `canal de réception`.
-7. **Répartition des demandes par agence** : Basé sur `agence`.
+### **Roadmap Simplifiée pour le Site Web**
 
 ---
 
-### **Indicateurs de délai et efficacité**
-8. **Durée moyenne de traitement globale** : Moyenne de `durée de traitement`.
-9. **Durée moyenne par état** : Moyenne de `durée de traitement` regroupée par `état`.
-10. **Durée moyenne par groupe de résolution** : Moyenne de `durée de traitement` par `gpe de résolution`.
-11. **Temps moyen d'étude technique** : Moyenne de `temps étude techniques`.
-12. **Temps moyen de traitement support** : Moyenne de `temps support`.
-13. **Durée moyenne par segment client** : Moyenne de `durée de traitement` regroupée par `segment client`.
+#### **1. Phase de Préparation : "La Planification"** *(Semaine 1-2)*  
+- **But :** Définir les bases du projet.  
+- **Étapes :**  
+  - Identifier les besoins du site.  
+  - Écrire le cahier des charges.  
+  - Collecter les contenus (textes, images, etc.).  
+
+🔹 **Livrable :** Cahier des charges validé.
 
 ---
 
-### **Indicateurs financiers**
-14. **Montant total traité** : Somme de `montant`.
-15. **Montant moyen par demande** : Moyenne de `montant`.
-16. **Répartition des montants par devise** : Basé sur `devise du montant`.
-17. **Montant total rejeté** : Somme de `montant` des demandes ayant un `motif de rejet`.
+#### **2. Phase de Design : "L’Apparence du Site"** *(Semaine 3-5)*  
+- **But :** Créer un visuel attrayant et professionnel.  
+- **Étapes :**  
+  - Réaliser les maquettes des pages.  
+  - Tester les maquettes pour recueillir des retours.  
+  - Apporter les ajustements nécessaires.  
+
+🔹 **Livrable :** Design validé.
 
 ---
 
-### **Indicateurs de typologie et segmentation**
-18. **Répartition des demandes par typologie** : Basé sur `typologie`.
-19. **Nombre de demandes par secteur d'activité** : Regroupement par `secteur d'activité`.
-20. **Répartition par segment client** : Basé sur `segment client`.
+#### **3. Phase de Développement Backend : "L’Ingénierie Technique"** *(Semaine 6-8)*  
+- **But :** Mettre en place la structure interne du site.  
+- **Étapes :**  
+  - Construire la base de données pour gérer les informations.  
+  - Créer les systèmes pour les contenus dynamiques (comme les sous-menus).  
+  - Tester les fonctionnalités internes.  
+
+🔹 **Livrable :** Backend opérationnel.
 
 ---
 
-### **Indicateurs de performance par acteur**
-21. **Durée moyenne de traitement par assistant comptable** : Moyenne de `durée traitements assistant comptable`.
-22. **Durée moyenne de traitement tiers** : Moyenne de `durée du traitement tiers`.
-23. **Temps total traité par support** : Somme de `temps traité`.
+#### **4. Phase de Développement Frontend : "Le Visuel du Site"** *(Semaine 9-11)*  
+- **But :** Construire l’interface que les visiteurs utiliseront.  
+- **Étapes :**  
+  - Intégrer les maquettes au site (menus et sous-menus).  
+  - Connecter le site au backend pour afficher des données en direct.  
+  - Ajouter des animations et tester l’utilisation.  
+
+🔹 **Livrable :** Frontend interactif et prêt à l’emploi.
 
 ---
 
-### **Indicateurs spécifiques**
-24. **Pourcentage de demandes traitées immédiatement** : Ratio basé sur la colonne `traitement immédiat`.
-25. **Taux de notification réussie** : Calculé à partir du `canal de notification`.
-26. **Temps de résolution moyen par motif** : Moyenne de `durée de résolution` regroupée par `motif`.
+#### **5. Phase Partie Admin : "Le Tableau de Bord"** *(Semaine 12-13)*  
+- **But :** Faciliter la gestion du site par l’équipe.  
+- **Étapes :**  
+  - Créer une interface pour gérer les contenus (ajouter, modifier, supprimer).  
+  - Ajouter un système pour lire les messages du formulaire de contact.  
+  - Tester la facilité d’utilisation.  
 
-Ces indicateurs peuvent être enrichis avec des analyses croisées (par exemple : durée moyenne par type et état) ou des tendances temporelles (évolution mensuelle des volumes, délais, etc.).
+🔹 **Livrable :** Tableau de bord fonctionnel.
+
+---
+
+#### **6. Phase Tests et Corrections : "La Dernière Révision"** *(Semaine 14-15)*  
+- **But :** S’assurer que tout fonctionne bien.  
+- **Étapes :**  
+  - Vérifier que toutes les fonctionnalités sont opérationnelles.  
+  - Tester les performances du site (vitesse, compatibilité mobile).  
+  - Réaliser des ajustements selon les retours.  
+
+🔹 **Livrable :** Site validé et prêt pour le déploiement.
+
+---
+
+#### **7. Phase Déploiement : "La Mise en Ligne"** *(Semaine 16)*  
+- **But :** Rendre le site accessible au public.  
+- **Étapes :**  
+  - Installer le site sur un hébergement sécurisé.  
+  - Mettre en place le certificat SSL pour la sécurité.  
+  - Vérifier que tout est en ordre une dernière fois.  
+
+🔹 **Livrable :** Site en ligne.
+
+---
+
+#### **8. Phase Maintenance : "L’Entretien Continu"** *(Continu)*  
+- **But :** Garder le site à jour et fonctionnel.  
+- **Étapes :**  
+  - Corriger les éventuels problèmes.  
+  - Mettre à jour les contenus régulièrement.  
+  - Écouter les retours des utilisateurs pour améliorer l’expérience.  
+
+🔹 **Livrable :** Site stable et amélioré au fil du temps.
+
+---
+
+### **Conseils pour la Présentation Visuelle**
+1. **Utilisez Miro :**
+   - Créez une frise chronologique horizontale.
+   - Ajoutez des couleurs pour chaque phase (par exemple : bleu pour la préparation, vert pour les tests, orange pour le développement).
+   - Intégrez des icônes simples (🎨 pour le design, 💻 pour le développement, 🚀 pour le déploiement).
+
+2. **Simplifiez encore plus :**
+   - Assurez-vous que chaque étape est claire et rapide à comprendre.
+   - Ajoutez des commentaires collaboratifs si vous travaillez en équipe. 
+
+Avec cette roadmap, tout le monde comprendra les étapes essentielles du projet et leur rôle dans le succès du site web.
