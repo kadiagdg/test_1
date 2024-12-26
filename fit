@@ -44,10 +44,6 @@ Ce processus est automatisé avec un script Python, qui récupère les informati
 
 
 __________________________________
-
-import psycopg2
-from psycopg2 import sql
-
 # Connexion à PostgreSQL
 def create_database_and_tables():
     try:
@@ -62,11 +58,17 @@ def create_database_and_tables():
         conn.autocommit = True
         cursor = conn.cursor()
 
-        # Création de la base de données
+        # Vérifier si la base de données existe déjà
         db_name = "ma_base_de_donnees"
-        cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db_name)))
-        print(f"Base de données '{db_name}' créée avec succès.")
-
+        cursor.execute("SELECT 1 FROM pg_catalog.pg_database WHERE datname = %s", (db_name,))
+        exists = cursor.fetchone()
+        if not exists:
+            # Création de la base de données
+            cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db_name)))
+            print(f"Base de données '{db_name}' créée avec succès.")
+        else:
+            print(f"La base de données '{db_name}' existe déjà.")
+        
         # Connexion à la nouvelle base
         conn.close()
         conn = psycopg2.connect(
@@ -80,27 +82,113 @@ def create_database_and_tables():
 
         # Création des tables
         table_103_query = """
-        CREATE TABLE table_103 (
+        CREATE TABLE IF NOT EXISTS table_103 (
             id SERIAL PRIMARY KEY,
             nom_fichier VARCHAR(255) NOT NULL,
-            reference103 VARCHAR(100) NOT NULL,
+            reference103 BIGINT NOT NULL,
             date_creation DATE NOT NULL,
             chemin_fichier TEXT NOT NULL,
             date_insertion TIMESTAMP DEFAULT NOW()
         );
         """
         table_910_query = """
-        CREATE TABLE table_910 (
+        CREATE TABLE IF NOT EXISTS table_910 (
             id SERIAL PRIMARY KEY,
             nom_fichier VARCHAR(255) NOT NULL,
-            reference910 VARCHAR(100) NOT NULL,
+            reference910 BIGINT NOT NULL,
             date_creation DATE NOT NULL,
             chemin_fichier TEXT NOT NULL,
             date_insertion TIMESTAMP DEFAULT NOW()
         );
         """
         traitement_query = """
-        CREATE TABLE traitement (
+        CREATE TABLE IF NOT EXISTS traitement (
+            id SERIAL PRIMARY KEY,
+            reference103 INT REFERENCES table_103(id) ON DELETE CASCADE,
+            reference910 INT REFERENCES table_910(id) ON DELETE CASCADE,
+            statut VARCHAR(50) NOT NULL,
+            date_traitement TIMESTAMP DEFAULT NOW()
+        );
+        """
+        
+        # Exécution des requêtes
+        cursor.execute(table_103_query)
+        cursor.execute(table_910_query)
+        cursor.execute(traitement_query)
+
+        print("Tables créées avec succès.")
+        conn.commit()
+
+    except Exception as e:
+        print("Une erreur s'est produite :", e)
+
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+# Appeler la fonction
+create_database_and_tables()
+# Connexion à PostgreSQL
+def create_database_and_tables():
+    try:
+        # Connexion à PostgreSQL (adapter les valeurs à votre configuration)
+        conn = psycopg2.connect(
+            dbname="postgres",  # La base initiale pour se connecter
+            user="votre_utilisateur",
+            password="votre_mot_de_passe",
+            host="localhost",
+            port="5432"
+        )
+        conn.autocommit = True
+        cursor = conn.cursor()
+
+        # Vérifier si la base de données existe déjà
+        db_name = "ma_base_de_donnees"
+        cursor.execute("SELECT 1 FROM pg_catalog.pg_database WHERE datname = %s", (db_name,))
+        exists = cursor.fetchone()
+        if not exists:
+            # Création de la base de données
+            cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db_name)))
+            print(f"Base de données '{db_name}' créée avec succès.")
+        else:
+            print(f"La base de données '{db_name}' existe déjà.")
+        
+        # Connexion à la nouvelle base
+        conn.close()
+        conn = psycopg2.connect(
+            dbname=db_name,
+            user="votre_utilisateur",
+            password="votre_mot_de_passe",
+            host="localhost",
+            port="5432"
+        )
+        cursor = conn.cursor()
+
+        # Création des tables
+        table_103_query = """
+        CREATE TABLE IF NOT EXISTS table_103 (
+            id SERIAL PRIMARY KEY,
+            nom_fichier VARCHAR(255) NOT NULL,
+            reference103 BIGINT NOT NULL,
+            date_creation DATE NOT NULL,
+            chemin_fichier TEXT NOT NULL,
+            date_insertion TIMESTAMP DEFAULT NOW()
+        );
+        """
+        table_910_query = """
+        CREATE TABLE IF NOT EXISTS table_910 (
+            id SERIAL PRIMARY KEY,
+            nom_fichier VARCHAR(255) NOT NULL,
+            reference910 BIGINT NOT NULL,
+            date_creation DATE NOT NULL,
+            chemin_fichier TEXT NOT NULL,
+            date_insertion TIMESTAMP DEFAULT NOW()
+        );
+        """
+        traitement_query = """
+        CREATE TABLE IF NOT EXISTS traitement (
             id SERIAL PRIMARY KEY,
             reference103 INT REFERENCES table_103(id) ON DELETE CASCADE,
             reference910 INT REFERENCES table_910(id) ON DELETE CASCADE,
