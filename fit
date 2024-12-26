@@ -1,0 +1,43 @@
+L'objectif est de traiter des fichiers SWIFT contenus dans deux dossiers : **MT103** et **MT910**. Ces dossiers contiennent des sous-dossiers organisés par dates, où se trouvent les fichiers au format PDF. Chaque fichier porte un nom qui inclut des informations importantes comme une référence unique, une date, un montant, une devise, etc.
+
+### Étapes du traitement :
+
+1. **Extraction des données :**
+   - Parcourir les fichiers du dossier **MT103** et enregistrer leurs informations (comme le chemin du fichier, la date, la référence, le montant, la devise, etc.) dans une table appelée **MT103** dans une base de données PostgreSQL.
+   - Faire de même avec les fichiers du dossier **MT910**, en enregistrant leurs informations dans une table appelée **MT910**.
+
+2. **Comparaison des fichiers :**
+   - Comparer les fichiers du dossier **MT103** avec ceux du dossier **MT910**, en utilisant la **référence unique** extraite des noms des fichiers.
+   - Enregistrer le résultat de cette comparaison dans une table appelée **match**, qui contiendra :
+     - La date de la comparaison.
+     - La date des fichiers (extraite du nom).
+     - Les références des fichiers (**MT103** et **MT910**).
+     - Les chemins des fichiers.
+     - Une indication si les références correspondent ("oui" si elles sont identiques, "non" sinon).
+
+3. **Gestion des correspondances :**
+   - Si un fichier de **MT103** a une correspondance dans **MT910** (même référence) pour la date du jour :
+     - Copier les deux fichiers dans un répertoire spécifique appelé **dossiers_traiter**.
+   - Si un fichier de **MT103** n'a pas de correspondance dans **MT910** pour la date du jour :
+     - Vérifier dans les dossiers des jours suivants si une correspondance existe.
+     - Si une correspondance est trouvée dans un jour ultérieur, traiter comme pour une correspondance classique (copier dans **dossiers_traiter**).
+     - Si aucune correspondance n'est trouvée, laisser les fichiers dans leurs dossiers d'origine.
+
+4. **Organisation quotidienne :**
+   - Chaque jour, de nouveaux sous-dossiers sont créés dans les dossiers **MT103** et **MT910** pour les fichiers du jour (par exemple, pour le 10 décembre 2024, les sous-dossiers correspondants seront créés).
+
+### Résumé des tables de la base de données :
+
+- **Table MT103 :**  
+  Contient des informations sur les fichiers du dossier MT103 :  
+  - `url`, `moisannee`, `jjmmaaaa`, `dossier`, `sousdossier`, `reference103`, `montant`, `devise`, `emetteur`, `recepteur`, etc.  
+
+- **Table MT910 :**  
+  Contient des informations sur les fichiers du dossier MT910 :  
+  - `url`, `moisannee`, `jjmmaaaa`, `reference910`, `montant`, `devise`, `emetteur`, `recepteur`, etc.  
+
+- **Table match :**  
+  Contient le résultat de la comparaison entre les fichiers MT103 et MT910 :  
+  - `date_match` (date système de la comparaison), `jjmmaaaa`, `reference103`, `reference910`, `url103`, `url910`, `match` ("oui" ou "non").
+
+Ce processus est automatisé avec un script Python, qui récupère les informations nécessaires, les enregistre dans les tables, effectue les comparaisons, et gère les fichiers en conséquence.
