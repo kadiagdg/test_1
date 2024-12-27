@@ -216,3 +216,59 @@ def create_database_and_tables():
 
 # Appeler la fonction
 create_database_and_tables()
+
+____________
+import re
+from datetime import datetime
+
+def extraire_donnees_mt103(nom_fichier):
+    # Extraction du nom de fichier uniquement
+    nom_fichier_extrait = nom_fichier.split("/")[-1]  # On récupère le nom du fichier, sans le chemin
+
+    # On divise le nom du fichier par le caractère '_'
+    parties = nom_fichier_extrait.split('_')
+
+    # Vérification que nous avons suffisamment de parties
+    if len(parties) !=0:
+        # Extraction des informations à partir des différentes parties du nom de fichier
+        emetteur = parties[0]  # Exemple: XBFC
+        reference103 = str(parties[4])  # Exemple: ER12345678998361
+
+        # Le montant se trouve après 'NONREF', donc on prend la partie suivante (partie[6])
+        # On exclut le texte NONREF et récupère la valeur correcte du montant
+        #montant_str = parties[5]  # 'NONREF_800.'
+        #montant_str = montant_str.split('_')[1].replace('.', '')  # On récupère le montant après NONREF et on nettoie le format
+        montant = str(parties[6])  # Conversion en float
+
+        devise = parties[7]  # Exemple: EUR
+        sousdossier = parties[8]  # Exemple: ABCXD
+        moisannee = parties[9][:6]  # Exemple: 1224 (mois + année)
+       # jjmmaaaa = parties[9]  # Exemple: 201224 (jour + mois + année)
+        #heureminute = parties[10].split('-')[1].split('.')[0]  # Exemple: 023457
+
+        # Conversion de la date jjmmaaaa en objet datetime
+        #date_creation = datetime.strptime(jjmmaaaa, "%d%m%Y")
+        
+        # Retourner les résultats sous forme de dictionnaire
+        return {
+            "emetteur": emetteur,
+            "reference103": reference103,
+            "montant": montant,
+            "devise": devise,
+            "sousdossier": sousdossier,
+            "moisannee": moisannee,
+            #"jjmmaaaa": jjmmaaaa,
+            #"date_creation": date_creation,
+           # "heureminute": heureminute
+        }
+    else:
+        raise ValueError("Le nom de fichier ne correspond pas au format attendu.")
+
+# Exemple d'utilisation avec le nom de fichier
+nom_fichier = "data/1224/20122024/entrant/MT103/ABCXD/XBFC_SWIFT_E_MT103_ER12345678998361_NONREF_800._EUR_ABCXD_201224-023457.pdf"
+donnees_mt103 = extraire_donnees_mt103(nom_fichier)
+
+# Affichage des données extraites
+for cle, valeur in donnees_mt103.items():
+    print(f"{cle}: {valeur}")
+
