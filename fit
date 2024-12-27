@@ -273,6 +273,9 @@ for cle, valeur in donnees_mt103.items():
     print(f"{cle}: {valeur}")
 
 ________________
+Pour insérer les données extraites dans une table mt103 dans une base de données, vous pouvez utiliser un framework comme SQLAlchemy (pour les bases de données relationnelles telles que PostgreSQL ou MySQL) ou d'autres bibliothèques comme psycopg2 ou sqlite3.
+
+L'idée ici est de vérifier si la reference103 existe déjà dans la table. Si elle n'existe pas, vous pouvez insérer un nouvel enregistrement. Voici un exemple de code utilisant SQLAlchemy pour accomplir cela.
 from sqlalchemy import create_engine, Column, String, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
