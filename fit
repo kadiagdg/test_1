@@ -272,3 +272,85 @@ donnees_mt103 = extraire_donnees_mt103(nom_fichier)
 for cle, valeur in donnees_mt103.items():
     print(f"{cle}: {valeur}")
 
+________________
+from sqlalchemy import create_engine, Column, String, Float
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from datetime import datetime
+
+# Définition de la base et du modèle
+Base = declarative_base()
+
+class MT103(Base):
+    __tablename__ = 'mt103'
+    
+    reference103 = Column(String, primary_key=True)
+    emetteur = Column(String)
+    montant = Column(Float)
+    devise = Column(String)
+    sousdossier = Column(String)
+    moisannee = Column(String)
+
+# Connexion à la base de données (ajustez selon votre configuration)
+engine = create_engine('sqlite:///mt103.db')  # Par exemple pour SQLite, changez selon votre SGBD
+Base.metadata.create_all(engine)
+
+Session = sessionmaker(bind=engine)
+session = Session()
+
+def extraire_donnees_mt103(nom_fichier):
+    # Extraction du nom de fichier uniquement
+    nom_fichier_extrait = nom_fichier.split("/")[-1]  # On récupère le nom du fichier, sans le chemin
+
+    # On divise le nom du fichier par le caractère '_'
+    parties = nom_fichier_extrait.split('_')
+
+    # Vérification que nous avons suffisamment de parties
+    if len(parties) != 0:
+        # Extraction des informations à partir des différentes parties du nom de fichier
+        emetteur = parties[0]  # Exemple: XBFC
+        reference103 = str(parties[4])  # Exemple: ER12345678998361
+        montant = str(parties[6])  # Montant (exemple: '800')
+        devise = parties[7]  # Exemple: EUR
+        sousdossier = parties[8]  # Exemple: ABCXD
+        moisannee = parties[9][:6]  # Exemple: 1224 (mois + année)
+        
+        # Retourner les résultats sous forme de dictionnaire
+        return {
+            "emetteur": emetteur,
+            "reference103": reference103,
+            "montant": float(montant),  # Convertir en float
+            "devise": devise,
+            "sousdossier": sousdossier,
+            "moisannee": moisannee
+        }
+    else:
+        raise ValueError("Le nom de fichier ne correspond pas au format attendu.")
+
+def inserer_si_non_existe(nom_fichier):
+    donnees_mt103 = extraire_donnees_mt103(nom_fichier)
+    
+    # Vérifier si la reference103 existe déjà dans la base de données
+    reference_exists = session.query(MT103).filter(MT103.reference103 == donnees_mt103['reference103']).first()
+    
+    if reference_exists is None:
+        # Insérer dans la table
+        nouveau_mt103 = MT103(
+            reference103=donnees_mt103['reference103'],
+            emetteur=donnees_mt103['emetteur'],
+            montant=donnees_mt103['montant'],
+            devise=donnees_mt103['devise'],
+            sousdossier=donnees_mt103['sousdossier'],
+            moisannee=donnees_mt103['moisannee']
+        )
+        session.add(nouveau_mt103)
+        session.commit()
+        print(f"Enregistrement inséré pour la référence {donnees_mt103['reference103']}")
+    else:
+        print(f"La référence {donnees_mt103['reference103']} existe déjà dans la table.")
+
+# Exemple d'utilisation avec le nom de fichier
+nom_fichier = "data/1224/20122024/entrant/MT103/ABCXD/XBFC_SWIFT_E_MT103_ER12345678998361_NONREF_800._EUR_ABCXD_201224-023457.pdf"
+inserer_si_non_existe(nom_fichier)
+
+
