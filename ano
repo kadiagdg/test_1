@@ -1,1 +1,203 @@
+import pandas as pd
+import hashlib
+
+# Fonction pour générer une valeur anonymisée unique
+def reversible_hash(value, salt="secret_key"):
+    """Anonymise une valeur de manière réversible en utilisant une clé secrète."""
+    hash_object = hashlib.sha256(f"{salt}{value}".encode())
+    return hash_object.hexdigest()[:10]  # Utiliser les 10 premiers caractères du hash
+
+# Fonction pour anonymiser un DataFrame
+def anonymize_dataframe(df, columns_to_anonymize, salt="secret_key"):
+    """Anonymise de manière réversible les colonnes spécifiées d'un DataFrame."""
+    anonymization_maps = {}  # Dictionnaire pour stocker les mappings
+    anonymized_df = df.copy()
+    
+    for column in columns_to_anonymize:
+        # Créer un mapping unique pour la colonne
+        unique_values = df[column].unique()
+        mapping = {val: reversible_hash(val, salt) for val in unique_values}
+        
+        # Sauvegarder le mapping
+        anonymization_maps[column] = mapping
+        
+        # Remplacer les valeurs dans la colonne par leur version anonymisée
+        anonymized_df[column] = df[column].map(mapping)
+    
+    return anonymized_df, anonymization_maps
+
+# Exemple d'utilisation
+if __name__ == "__main__":
+    # DataFrame d'exemple
+    data = {
+        "numero_compte": ["12345", "67890", "12345", "67890", "11111"],
+        "id_client": ["ABC123", "DEF456", "ABC123", "XYZ789", "XYZ789"],
+        "nom_client": ["Alice", "Bob", "Alice", "Charlie", "Charlie"],
+        "code_agent": ["AGT1", "AGT2", "AGT1", "AGT3", "AGT3"],
+        "nom_agent": ["Agent1", "Agent2", "Agent1", "Agent3", "Agent3"],
+    }
+    df = pd.DataFrame(data)
+
+    # Colonnes à anonymiser
+    columns_to_anonymize = [
+        "numero_compte", "id_client", "nom_client", "code_agent", "nom_agent"
+    ]
+
+    # Anonymisation
+    anonymized_df, anonymization_maps = anonymize_dataframe(df, columns_to_anonymize, salt="my_secret_salt")
+
+    # Afficher le résultat
+    print("DataFrame Original:")
+    print(df)
+    print("\nDataFrame Anonymisé:")
+    print(anonymized_df)
+    print("\nMapping d'Anonymisation:")
+    print(anonymization_maps)
+
+______________
+
+# Fonction pour dé-anonymiser un DataFrame
+def deanonymize_dataframe(anonymized_df, anonymization_maps):
+    deanonymized_df = anonymized_df.copy()
+    
+    for column, mapping in anonymization_maps.items():
+        # Inverser le mapping
+        reverse_mapping = {v: k for k, v in mapping.items()}
+        deanonymized_df[column] = anonymized_df[column].map(reverse_mapping)
+    
+    return deanonymized_df
+
+# Exemple de dé-anonymisation
+deanonymized_df = deanonymize_dataframe(anonymized_df, anonymization_maps)
+print("\nDataFrame Dé-anonymisé:")
+deanonymized_df
+
+---------------- global mapping
+import pandas as pd
+import hashlib
+
+# Fonction pour générer une valeur anonymisée unique
+def reversible_hash(value, salt="secret_key"):
+    """Anonymise une valeur de manière réversible en utilisant une clé secrète."""
+    hash_object = hashlib.sha256(f"{salt}{value}".encode())
+    return hash_object.hexdigest()[:10]  # Utiliser les 10 premiers caractères du hash
+
+# Fonction pour anonymiser un DataFrame avec un mapping global
+def anonymize_dataframe_with_global_map(df, columns_to_anonymize, global_mapping, salt="secret_key"):
+    """Anonymise de manière réversible les colonnes spécifiées d'un DataFrame en utilisant un mapping global."""
+    anonymized_df = df.copy()
+    
+    for column in columns_to_anonymize:
+        if column in df.columns:  # Vérifier si la colonne existe dans le DataFrame
+            # Créer ou mettre à jour le mapping global pour cette colonne
+            unique_values = df[column].unique()
+            for val in unique_values:
+                if val not in global_mapping:
+                    global_mapping[val] = reversible_hash(val, salt)
+            
+            # Appliquer le mapping global pour anonymiser la colonne
+            anonymized_df[column] = df[column].map(global_mapping)
+    
+    return anonymized_df
+
+# Exemple d'utilisation
+if __name__ == "__main__":
+    # DataFrames d'exemple
+    df1 = pd.DataFrame({
+        "numero_compte": ["12345", "67890", "12345"],
+        "id_client": ["ABC123", "DEF456", "ABC123"],
+        "nom_client": ["Alice", "Bob", "Alice"]
+    })
+
+    df2 = pd.DataFrame({
+        "numero_compte": ["12345", "67890", "11111"],
+        "code_agent": ["AGT1", "AGT2", "AGT3"],
+        "nom_agent": ["Agent1", "Agent2", "Agent3"]
+    })
+
+    # Colonnes à anonymiser
+    columns_to_anonymize_df1 = ["numero_compte", "id_client", "nom_client"]
+    columns_to_anonymize_df2 = ["numero_compte", "code_agent", "nom_agent"]
+
+    # Mapping global
+    global_mapping = {}
+
+    # Anonymisation des DataFrames
+    anonymized_df1 = anonymize_dataframe_with_global_map(df1, columns_to_anonymize_df1, global_mapping, salt="my_secret_salt")
+    anonymized_df2 = anonymize_dataframe_with_global_map(df2, columns_to_anonymize_df2, global_mapping, salt="my_secret_salt")
+
+    # Afficher les résultats
+    print("DataFrame Original 1:")
+    print(df1)
+    print("\nDataFrame Anonymisé 1:")
+    print(anonymized_df1)
+    
+    print("\nDataFrame Original 2:")
+    print(df2)
+    print("\nDataFrame Anonymisé 2:")
+    print(anonymized_df2)
+    
+    print("\nMapping Global:")
+    print(global_mapping)
+
+
+____
+import json
+
+# Sauvegarder le mapping global
+with open("anonymization_mapping.json", "w") as f:
+    json.dump(global_mapping, f)
+
+# Charger le mapping global
+with open("anonymization_mapping.json", "r") as f:
+    loaded_mapping = json.load(f)
+
+è___
+import pandas as pd
+import json
+
+# Fonction pour charger le mapping depuis un fichier JSON
+def load_anonymization_mapping(mapping_file="anonymization_mapping.json"):
+    """Charge le mapping d'anonymisation depuis un fichier JSON."""
+    with open(mapping_file, "r") as f:
+        mapping = json.load(f)
+    return mapping
+
+# Fonction pour dé-anonymiser un DataFrame
+def deanonymize_dataframe_with_global_map(anonymized_df, anonymization_map):
+    """Dé-anonymise un DataFrame en utilisant un mapping global inversé."""
+    deanonymized_df = anonymized_df.copy()
+
+    # Inverser le mapping : clé devient la valeur, et la valeur devient la clé
+    reverse_mapping = {v: k for k, v in anonymization_map.items()}
+
+    # Appliquer le reverse mapping sur chaque colonne
+    for column in anonymized_df.columns:
+        deanonymized_df[column] = anonymized_df[column].map(reverse_mapping)
+
+    return deanonymized_df
+
+# Exemple d'utilisation
+if __name__ == "__main__":
+    # Charger le mapping global depuis le fichier JSON
+    anonymization_map = load_anonymization_mapping("anonymization_mapping.json")
+
+    # Exemple de DataFrame anonymisé
+    anonymized_df = pd.DataFrame({
+        "numero_compte": ["afbad97503", "5d7a6cfad0", "afbad97503"],
+        "id_client": ["ecd4f9e07d", "3bb2a4f69a", "ecd4f9e07d"],
+        "nom_client": ["71d7cd0850", "8a200d01a2", "71d7cd0850"],
+        "code_agent": ["e5c88ba3a1", "477a713d18", "e5c88ba3a1"]
+    })
+
+    # Afficher le DataFrame anonymisé
+    print("DataFrame Anonymisé:")
+    print(anonymized_df)
+
+    # Dé-anonymiser les données
+    deanonymized_df = deanonymize_dataframe_with_global_map(anonymized_df1, anonymization_map)
+
+    # Afficher le DataFrame dé-anonymisé
+    print("\nDataFrame Dé-anonymisé:")
+    print(deanonymized_df)
 
