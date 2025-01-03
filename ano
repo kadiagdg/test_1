@@ -201,3 +201,6 @@ if __name__ == "__main__":
     print("\nDataFrame Dé-anonymisé:")
     print(deanonymized_df)
 
+______________
+reverse_mapping = {str(v): str(k) for k, v in anonymization_map.items()}
+
