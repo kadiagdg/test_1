@@ -1,0 +1,216 @@
+Pour répondre à vos besoins, voici une **architecture modulaire** qui permet aux **data engineers** de fournir des données anonymisées aux **data analysts** pour leurs traitements, tout en permettant la désanonymisation dans les API de restitution pour les utilisateurs finaux, sans que les data analysts aient accès aux clés ou aux données en clair.
+
+---
+
+### **Architecture proposée**
+
+1. **Data Engineers** :
+   - Génèrent et gèrent les clés de chiffrement et de hachage.
+   - Anonymisent les données sensibles.
+   - Fournissent les données anonymisées et les fonctions de désanonymisation encapsulées dans un module sécurisé.
+
+2. **Data Analysts** :
+   - Reçoivent les données anonymisées.
+   - Effectuent leurs analyses sur les données anonymisées.
+   - N'ont pas accès aux clés ni aux données en clair.
+
+3. **API de Restitution** :
+   - Utilisent la fonction de désanonymisation pour restituer les données en clair aux utilisateurs finaux.
+   - Les data analysts n'ont pas accès à cette fonction.
+
+---
+
+### **Implémentation**
+
+Voici comment structurer le projet :
+
+---
+
+#### **1. Module de gestion des clés et d'anonymisation (Data Engineers)**
+
+Ce module est responsable de :
+- Générer et stocker les clés.
+- Anonymiser les données.
+- Fournir une fonction de désanonymisation encapsulée.
+
+```python
+# anonymization_module.py
+import os
+import json
+from cryptography.fernet import Fernet
+import hmac
+import hashlib
+from dotenv import load_dotenv, set_key, dotenv_values
+
+# Chemin vers le fichier .env
+env_file = ".env"
+
+# Vérifier si le fichier .env existe
+if not os.path.exists(env_file):
+    # Créer un fichier .env vide
+    with open(env_file, "w") as f:
+        pass
+
+# Charger les variables d'environnement
+env_vars = dotenv_values(env_file)
+
+# Vérifier si les clés existent dans .env
+if "FERNET_KEY" not in env_vars or "HMAC_KEY" not in env_vars:
+    # Générer une clé Fernet
+    fernet_key = Fernet.generate_key().decode()  # Convertir en chaîne pour le stockage
+
+    # Générer une clé HMAC
+    hmac_key = os.urandom(32).hex()  # Générer 32 bytes aléatoires et convertir en hexadécimal
+
+    # Enregistrer les clés dans .env
+    set_key(env_file, "FERNET_KEY", fernet_key)
+    set_key(env_file, "HMAC_KEY", hmac_key)
+
+    print("Nouvelles clés générées et enregistrées dans .env.")
+else:
+    print("Les clés existent déjà dans .env.")
+
+# Charger les variables d'environnement
+load_dotenv()
+
+# Récupérer les clés
+fernet_key = os.getenv("FERNET_KEY").encode()  # Convertir en bytes pour Fernet
+hmac_key = bytes.fromhex(os.getenv("HMAC_KEY"))  # Convertir en bytes pour HMAC
+
+# Initialiser Fernet avec la clé
+cipher_suite = Fernet(fernet_key)
+
+# Fonction pour chiffrer un champ avec Fernet
+def encrypt_symmetric(data):
+    return cipher_suite.encrypt(data.encode()).decode()
+
+# Fonction pour déchiffrer un champ avec Fernet
+def decrypt_symmetric(data):
+    return cipher_suite.decrypt(data.encode()).decode()
+
+# Fonction pour hacher un champ avec HMAC
+def anonymize_hash(data):
+    hmac_hash = hmac.new(hmac_key, data.encode(), hashlib.sha256)
+    return hmac_hash.hexdigest()[:10]  # Retourne les 10 premiers caractères du hachage
+
+# Fonction pour anonymiser un DataFrame
+def anonymize_dataframe(df):
+    # Créer des tables de correspondance pour les colonnes hachées
+    mapping_tables = {
+        "numero_compte": {},
+        "id_client": {},
+        "code_agent": {},
+    }
+
+    # Anonymisation des données
+    df_anonymized = df.copy()
+
+    # Hacher les colonnes numero_compte, id_client et code_agent
+    for column in ["numero_compte", "id_client", "code_agent"]:
+        for value in df[column].unique():
+            mapping_tables[column][value] = anonymize_hash(value)
+        df_anonymized[column] = df_anonymized[column].map(mapping_tables[column])
+
+    # Chiffrer les colonnes nom_client et nom_agent
+    df_anonymized["nom_client"] = df_anonymized["nom_client"].apply(encrypt_symmetric)
+    df_anonymized["nom_agent"] = df_anonymized["nom_agent"].apply(encrypt_symmetric)
+
+    # Sauvegarder les tables de correspondance dans un fichier chiffré
+    with open("mapping_tables_encrypted.json", "wb") as f:
+        encrypted_mapping = cipher_suite.encrypt(json.dumps(mapping_tables).encode())
+        f.write(encrypted_mapping)
+
+    return df_anonymized
+
+# Fonction de désanonymisation encapsulée
+def get_deanonymization_function():
+    # Charger et déchiffrer les tables de correspondance
+    with open("mapping_tables_encrypted.json", "rb") as f:
+        encrypted_mapping = f.read()
+        decrypted_mapping = cipher_suite.decrypt(encrypted_mapping).decode()
+        mapping_tables = json.loads(decrypted_mapping)
+
+    # Fonction interne pour désanonymiser un DataFrame
+    def deanonymize_dataframe(df_anonymized):
+        df_deanonymized = df_anonymized.copy()
+
+        # Déchiffrer les colonnes nom_client et nom_agent
+        df_deanonymized["nom_client"] = df_deanonymized["nom_client"].apply(decrypt_symmetric)
+        df_deanonymized["nom_agent"] = df_deanonymized["nom_agent"].apply(decrypt_symmetric)
+
+        # Désanonymiser les colonnes numero_compte, id_client et code_agent
+        for column in ["numero_compte", "id_client", "code_agent"]:
+            reverse_mapping_table = {v: k for k, v in mapping_tables[column].items()}
+            df_deanonymized[column] = df_deanonymized[column].map(reverse_mapping_table)
+
+        return df_deanonymized
+
+    return deanonymize_dataframe
+```
+
+---
+
+#### **2. Utilisation par les Data Analysts**
+
+Les data analysts reçoivent les données anonymisées et la fonction de désanonymisation encapsulée. Ils n'ont pas accès aux clés ni aux données en clair.
+
+```python
+# data_analyst_script.py
+import pandas as pd
+from anonymization_module import anonymize_dataframe, get_deanonymization_function
+
+# Exemple de données
+data = {
+    "numero_compte": ["12345", "67890", "12345", "67890", "11111"],
+    "id_client": ["ABC123", "DEF456", "ABC123", "XYZ789", "XYZ789"],
+    "nom_client": ["Alice", "Bob", "Alice", "Charlie", "Charlie"],
+    "code_agent": ["AGT1", "AGT2", "AGT1", "AGT3", "AGT3"],
+    "nom_agent": ["Agent1", "Agent2", "Agent1", "Agent3", "Agent3"],
+}
+df = pd.DataFrame(data)
+
+# Anonymiser les données
+df_anonymized = anonymize_dataframe(df)
+
+# Afficher les données anonymisées
+print("DataFrame Anonymisé :")
+print(df_anonymized)
+
+# Les data analysts effectuent leurs analyses sur les données anonymisées
+# ...
+
+# Fonction de désanonymisation (réservée aux API de restitution)
+deanonymize_dataframe = get_deanonymization_function()
+
+# Exemple de désanonymisation (simulation de l'API de restitution)
+df_deanonymized = deanonymize_dataframe(df_anonymized)
+
+# Afficher les données désanonymisées
+print("\nDataFrame Désanonymisé :")
+print(df_deanonymized)
+```
+
+---
+
+#### **3. API de Restitution**
+
+L'API de restitution utilise la fonction de désanonymisation pour restituer les données en clair aux utilisateurs finaux. Les data analysts n'ont pas accès à cette fonction.
+
+```python
+# api_restitution.py
+from anonymization_module import get_deanonymization_function
+
+# Fonction de désanonymisation
+deanonymize_dataframe = get_deanonymization_function()
+
+# Exemple de requête API
+def restitute_data(df_anonymized):
+    # Désanonymiser les données
+    df_deanonymized = deanonymize_dataframe(df_anonymized)
+    return df_deanonymized
+
+# Utilisation dans l'API
+# df_deanonymized = restitute_data(df_anonymized)
+```
+
+-restent sécurisées et inaccessibles aux data analysts.
