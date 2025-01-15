@@ -3,14 +3,23 @@ import json
 from cryptography.fernet import Fernet
 import hmac
 import hashlib
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key, dotenv_values
 import pandas as pd
 
 # Chemin vers le fichier .env
 env_file = ".env"
 
-# Générer et enregistrer les clés si elles n'existent pas
+# Vérifier si le fichier .env existe
 if not os.path.exists(env_file):
+    # Créer un fichier .env vide
+    with open(env_file, "w") as f:
+        pass
+
+# Charger les variables d'environnement
+env_vars = dotenv_values(env_file)
+
+# Vérifier si les clés existent dans .env
+if "FERNET_KEY" not in env_vars or "HMAC_KEY" not in env_vars:
     # Générer une clé Fernet
     fernet_key = Fernet.generate_key().decode()  # Convertir en chaîne pour le stockage
 
@@ -18,9 +27,8 @@ if not os.path.exists(env_file):
     hmac_key = os.urandom(32).hex()  # Générer 32 bytes aléatoires et convertir en hexadécimal
 
     # Enregistrer les clés dans .env
-    with open(env_file, "w") as f:
-        f.write(f"FERNET_KEY={fernet_key}\n")
-        f.write(f"HMAC_KEY={hmac_key}\n")
+    set_key(env_file, "FERNET_KEY", fernet_key)
+    set_key(env_file, "HMAC_KEY", hmac_key)
 
     print("Nouvelles clés générées et enregistrées dans .env.")
 else:
