@@ -1,0 +1,111 @@
+import os
+import json
+from cryptography.fernet import Fernet
+import hmac
+import hashlib
+from dotenv import load_dotenv
+import pandas as pd
+
+# Chemin vers le fichier .env
+env_file = ".env"
+
+# Générer et enregistrer les clés si elles n'existent pas
+if not os.path.exists(env_file):
+    # Générer une clé Fernet
+    fernet_key = Fernet.generate_key().decode()  # Convertir en chaîne pour le stockage
+
+    # Générer une clé HMAC
+    hmac_key = os.urandom(32).hex()  # Générer 32 bytes aléatoires et convertir en hexadécimal
+
+    # Enregistrer les clés dans .env
+    with open(env_file, "w") as f:
+        f.write(f"FERNET_KEY={fernet_key}\n")
+        f.write(f"HMAC_KEY={hmac_key}\n")
+
+    print("Nouvelles clés générées et enregistrées dans .env.")
+else:
+    print("Les clés existent déjà dans .env.")
+
+# Charger les variables d'environnement
+load_dotenv()
+
+# Récupérer les clés
+fernet_key = os.getenv("FERNET_KEY").encode()  # Convertir en bytes pour Fernet
+hmac_key = bytes.fromhex(os.getenv("HMAC_KEY"))  # Convertir en bytes pour HMAC
+
+# Initialiser Fernet avec la clé
+cipher_suite = Fernet(fernet_key)
+
+# Fonction pour chiffrer un champ avec Fernet
+def encrypt_symmetric(data):
+    return cipher_suite.encrypt(data.encode()).decode()
+
+# Fonction pour déchiffrer un champ avec Fernet
+def decrypt_symmetric(data):
+    return cipher_suite.decrypt(data.encode()).decode()
+
+# Fonction pour hacher un champ avec HMAC
+def anonymize_hash(data):
+    hmac_hash = hmac.new(hmac_key, data.encode(), hashlib.sha256)
+    return hmac_hash.hexdigest()[:10]  # Retourne les 10 premiers caractères du hachage
+
+# Exemple de données
+data = {
+    "numero_compte": ["12345", "67890", "12345", "67890", "11111"],
+    "id_client": ["ABC123", "DEF456", "ABC123", "XYZ789", "XYZ789"],
+    "nom_client": ["Alice", "Bob", "Alice", "Charlie", "Charlie"],
+    "code_agent": ["AGT1", "AGT2", "AGT1", "AGT3", "AGT3"],
+    "nom_agent": ["Agent1", "Agent2", "Agent1", "Agent3", "Agent3"],
+}
+df = pd.DataFrame(data)
+
+# Créer des tables de correspondance pour les colonnes hachées
+mapping_tables = {
+    "numero_compte": {},
+    "id_client": {},
+    "code_agent": {},
+}
+
+# Anonymisation des données
+df_anonymized = df.copy()
+
+# Hacher les colonnes numero_compte, id_client et code_agent
+for column in ["numero_compte", "id_client", "code_agent"]:
+    for value in df[column].unique():
+        mapping_tables[column][value] = anonymize_hash(value)
+    df_anonymized[column] = df_anonymized[column].map(mapping_tables[column])
+
+# Chiffrer les colonnes nom_client et nom_agent
+df_anonymized["nom_client"] = df_anonymized["nom_client"].apply(encrypt_symmetric)
+df_anonymized["nom_agent"] = df_anonymized["nom_agent"].apply(encrypt_symmetric)
+
+# Sauvegarder les tables de correspondance dans un fichier chiffré
+with open("mapping_tables_encrypted.json", "wb") as f:
+    encrypted_mapping = cipher_suite.encrypt(json.dumps(mapping_tables).encode())
+    f.write(encrypted_mapping)
+
+# Afficher le DataFrame anonymisé
+print("DataFrame Anonymisé :")
+print(df_anonymized)
+
+# Désanonymisation des données
+df_deanonymized = df_anonymized.copy()
+
+# Déchiffrer les colonnes nom_client et nom_agent
+df_deanonymized["nom_client"] = df_deanonymized["nom_client"].apply(decrypt_symmetric)
+df_deanonymized["nom_agent"] = df_deanonymized["nom_agent"].apply(decrypt_symmetric)
+
+# Charger et déchiffrer les tables de correspondance
+with open("mapping_tables_encrypted.json", "rb") as f:
+    encrypted_mapping = f.read()
+    decrypted_mapping = cipher_suite.decrypt(encrypted_mapping).decode()
+    mapping_tables = json.loads(decrypted_mapping)
+
+# Désanonymiser les colonnes numero_compte, id_client et code_agent
+for column in ["numero_compte", "id_client", "code_agent"]:
+    reverse_mapping_table = {v: k for k, v in mapping_tables[column].items()}
+    df_deanonymized[column] = df_deanonymized[column].map(reverse_mapping_table)
+
+# Afficher le DataFrame désanonymisé
+print("\nDataFrame Désanonymisé :")
+print(df_deanonymized)
