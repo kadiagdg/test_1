@@ -1,119 +1,67 @@
-import os
-import json
-from cryptography.fernet import Fernet
-import hmac
-import hashlib
-from dotenv import load_dotenv, set_key, dotenv_values
-import pandas as pd
 
-# Chemin vers le fichier .env
-env_file = ".env"
+### **Module 1 : Tenue de poste**
+Il démontre une compréhension approfondie de ses responsabilités et des attentes liées à son rôle.
+Il fait preuve d'une autonomie dans l'exécution de ses tâches et sait.
+Son engagement est un atout majeur pour l'équipe.
 
-# Vérifier si le fichier .env existe
-if not os.path.exists(env_file):
-    # Créer un fichier .env vide
-    with open(env_file, "w") as f:
-        pass
 
-# Charger les variables d'environnement
-env_vars = dotenv_values(env_file)
+### **Module 2 : Volet opérationnel**
+Sur le plan opérationnel, votre collaborateur excelle.
+Il répond aux objectifs avec des résultats satisfaisants.
+Il apporte un soutien précieux aux autres membres de l'équipe DS notemment sur es.
+Son esprit d'équipe et sa disponibilité contribuent est significatif au sein de la c.
 
-# Vérifier si les clés existent dans .env
-if "FERNET_KEY" not in env_vars or "HMAC_KEY" not in env_vars:
-    # Générer une clé Fernet
-    fernet_key = Fernet.generate_key().decode()  # Convertir en chaîne pour le stockage
 
-    # Générer une clé HMAC
-    hmac_key = os.urandom(32).hex()  # Générer 32 bytes aléatoires et convertir en hexadécimal
+### **Module 3 : Volet technique**
+Sur le plan technique, il démontre une bonne maîtrise des outils et des processus liés à son poste. 
+Il est efficace dans l'exécution des tâches techniques et apporte des solutions pertinentes aux défis rencontrés. 
+Cependant, pour renforcer ses compétences et maximiser son potentiel,
+il serait bénéfique qu'il approfondisse ses connaissances dans les technologies spécifiques aux data engineers.
 
-    # Enregistrer les clés dans .env
-    set_key(env_file, "FERNET_KEY", fernet_key)
-    set_key(env_file, "HMAC_KEY", hmac_key)
 
-    print("Nouvelles clés générées et enregistrées dans .env.")
-else:
-    print("Les clés existent déjà dans .env.")
+### **Module 4 : Recommandations et critiques**
+#### Points forts :
+Excellente tenue de posteet compréhension des responsabilités.
+Résultats opérationnels constants et de haute qualité.
+Esprit d'équipe et soutien technique aux collègues.
 
-# Charger les variables d'environnement
-load_dotenv()
+#### Axes d'amélioration :
+Formation continue : Pour renforcer ses compétences techniques, il est recommandé de suivre des 
+formations cibléesdans les technologies des data engineers.
+Cela lui permettra de monter en compétence et de contribuer encore plus efficacement aux projets.
+Veille technologique: Encourager une veille active sur les nouvelles tendances et outils dans le domaine des données.
 
-# Récupérer les clés
-fernet_key = os.getenv("FERNET_KEY").encode()  # Convertir en bytes pour Fernet
-hmac_key = bytes.fromhex(os.getenv("HMAC_KEY"))  # Convertir en bytes pour HMAC
+___________________
 
-# Initialiser Fernet avec la clé
-cipher_suite = Fernet(fernet_key)
+### **Module 1 : Tenue de poste**
+za, bien qu'ayant seulement un an d'expérience professionnelle, il démontre une réelle compétence et une volonté de progresser. 
+Il est investi dans son rôle et fait preuve d'une grande motivation pour se former et *être à la hauteur des attentes. 
+Son engagement à se perfectionner à ses propres frais témoigne de sa détermination et de son sens des responsabilités.
 
-# Fonction pour chiffrer un champ avec Fernet
-def encrypt_symmetric(data):
-    return cipher_suite.encrypt(data.encode()).decode()
 
-# Fonction pour déchiffrer un champ avec Fernet
-def decrypt_symmetric(data):
-    return cipher_suite.decrypt(data.encode()).decode()
+### **Module 2 : Volet opérationnel**
+Sur le plan opérationnel, votre collaborateur est à l'écoute et réactif. 
+Il s'intègre bien dans l'équipe et participe activement aux projets.
+De plus, il doit améliorer la fluidité de ses remontées d'information.
 
-# Fonction pour hacher un champ avec HMAC
-def anonymize_hash(data):
-    hmac_hash = hmac.new(hmac_key, data.encode(), hashlib.sha256)
-    return hmac_hash.hexdigest()[:10]  # Retourne les 10 premiers caractères du hachage
 
-# Exemple de données
-data = {
-    "numero_compte": ["12345", "67890", "12345", "67890", "11111"],
-    "id_client": ["ABC123", "DEF456", "ABC123", "XYZ789", "XYZ789"],
-    "nom_client": ["Alice", "Bob", "Alice", "Charlie", "Charlie"],
-    "code_agent": ["AGT1", "AGT2", "AGT1", "AGT3", "AGT3"],
-    "nom_agent": ["Agent1", "Agent2", "Agent1", "Agent3", "Agent3"],
-}
-df = pd.DataFrame(data)
+### **Module 3 : Volet technique**
+Sur le plan technique, votre collaborateur montre un bon potentiel et une 
+capacité à apprendre rapidement. Il est compétent  dans les tâches 
+qui lui sont confiées et fait preuve d'une bonne compréhension des outils et processus.
+Pour consolider ses compétences, il est recommandé qu'il suive 
+des formations supplémentaires dans des domaines clésde la de
 
-# Créer des tables de correspondance pour les colonnes hachées
-mapping_tables = {
-    "numero_compte": {},
-    "id_client": {},
-    "code_agent": {},
-}
 
-# Anonymisation des données
-df_anonymized = df.copy()
+### **Module 4 : Recommandations et critiques**
+#### Points forts :
+- Motivation et engagement à se former et à progresser.
+- Compétence technique malgré un niveau d'expérience limité.
+- Esprit d'équipe et écoute active.
 
-# Hacher les colonnes numero_compte, id_client et code_agent
-for column in ["numero_compte", "id_client", "code_agent"]:
-    for value in df[column].unique():
-        mapping_tables[column][value] = anonymize_hash(value)
-    df_anonymized[column] = df_anonymized[column].map(mapping_tables[column])
-
-# Chiffrer les colonnes nom_client et nom_agent
-df_anonymized["nom_client"] = df_anonymized["nom_client"].apply(encrypt_symmetric)
-df_anonymized["nom_agent"] = df_anonymized["nom_agent"].apply(encrypt_symmetric)
-
-# Sauvegarder les tables de correspondance dans un fichier chiffré
-with open("mapping_tables_encrypted.json", "wb") as f:
-    encrypted_mapping = cipher_suite.encrypt(json.dumps(mapping_tables).encode())
-    f.write(encrypted_mapping)
-
-# Afficher le DataFrame anonymisé
-print("DataFrame Anonymisé :")
-print(df_anonymized)
-
-# Désanonymisation des données
-df_deanonymized = df_anonymized.copy()
-
-# Déchiffrer les colonnes nom_client et nom_agent
-df_deanonymized["nom_client"] = df_deanonymized["nom_client"].apply(decrypt_symmetric)
-df_deanonymized["nom_agent"] = df_deanonymized["nom_agent"].apply(decrypt_symmetric)
-
-# Charger et déchiffrer les tables de correspondance
-with open("mapping_tables_encrypted.json", "rb") as f:
-    encrypted_mapping = f.read()
-    decrypted_mapping = cipher_suite.decrypt(encrypted_mapping).decode()
-    mapping_tables = json.loads(decrypted_mapping)
-
-# Désanonymiser les colonnes numero_compte, id_client et code_agent
-for column in ["numero_compte", "id_client", "code_agent"]:
-    reverse_mapping_table = {v: k for k, v in mapping_tables[column].items()}
-    df_deanonymized[column] = df_deanonymized[column].map(reverse_mapping_table)
-
-# Afficher le DataFrame désanonymisé
-print("\nDataFrame Désanonymisé :")
-print(df_deanonymized)
+#### Axes d'amélioration :
+- Qualité des livrables : Il doit porter une attention accrue
+aux documents et aux données qu'il produit, en veillant à leur exactitude et à leur clarté.
+- Communication : Il doit améliorer la fluidité de ses remontées d'information
+- Formation continue : Pour accroître ses compétences, 
+il est essentiel qu'il suive des formations ciblées dans les domaines techniques
