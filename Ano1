@@ -65,3 +65,43 @@ aux documents et aux données qu'il produit, en veillant à leur exactitude et �
 - Communication : Il doit améliorer la fluidité de ses remontées d'information
 - Formation continue : Pour accroître ses compétences, 
 il est essentiel qu'il suive des formations ciblées dans les domaines techniques
+__________
+import pandas as pd
+
+# Exemple de données
+data_a = {'ref': ['REF1', 'REF2', 'REF3', 'REF4']}
+data_b = {'ref': ['REF3', 'REF4', 'REF5', 'REF6']}
+
+# Créer les DataFrames
+dfa = pd.DataFrame(data_a)
+dfb = pd.DataFrame(data_b)
+
+# Trouver les références communes
+common_ref = pd.merge(dfa, dfb, on='ref', how='inner')
+
+# Trouver les références uniques à dfa
+unique_to_dfa = dfa[~dfa['ref'].isin(dfb['ref'])]
+
+# Trouver les références uniques à dfb
+unique_to_dfb = dfb[~dfb['ref'].isin(dfa['ref'])]
+
+# Statistiques
+num_common = len(common_ref)
+num_unique_dfa = len(unique_to_dfa)
+num_unique_dfb = len(unique_to_dfb)
+
+# Affichage des résultats
+print("Statistiques de Correspondance :")
+print(f"Nombre de références communes : {num_common}")
+print(f"Nombre de références uniques à dfa : {num_unique_dfa}")
+print(f"Nombre de références uniques à dfb : {num_unique_dfb}")
+
+# Détails des références
+print("\nRéférences communes :")
+print(common_ref['ref'].tolist())
+
+print("\nRéférences uniques à dfa :")
+print(unique_to_dfa['ref'].tolist())
+
+print("\nRéférences uniques à dfb :")
+print(unique_to_dfb['ref'].tolist())
