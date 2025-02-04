@@ -1,0 +1,118 @@
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+from datetime import datetime, timedelta
+import pandas as pd
+import os
+from scripts.traitement import traitement_achats, traitement_ventes
+
+# Chemins des fichiers
+DATA_DIR = "/chemin/vers/data"
+OUTPUT_DIR = "/chemin/vers/output"
+
+# Paramètres de connexion à PostgreSQL
+POSTGRES_CONN = {
+    'host': 'localhost',  # Adresse du serveur PostgreSQL
+    'port': 5432,         # Port PostgreSQL (par défaut : 5432)
+    'database': 'mabase', # Nom de la base de données
+    'user': 'monuser',    # Nom d'utilisateur PostgreSQL
+    'password': 'monpass' # Mot de passe PostgreSQL
+}
+
+# Fonction pour lire un fichier CSV
+def lire_csv(file_path):
+    return pd.read_csv(file_path)
+
+# Fonction pour traiter df1 (achats)
+def traiter_df1():
+    df = lire_csv(os.path.join(DATA_DIR, "df1.csv"))
+    df_traite = traitement_achats(df)
+    df_traite.to_csv(os.path.join(OUTPUT_DIR, "df1_traite.csv"), index=False)
+    return df_traite
+
+# Fonction pour traiter df2 (flux de ventes)
+def traiter_df2():
+    df = lire_csv(os.path.join(DATA_DIR, "df2.csv"))
+    df_traite = traitement_ventes(df)
+    df_traite.to_csv(os.path.join(OUTPUT_DIR, "df2_traite.csv"), index=False)
+    return df_traite
+
+# Fonction pour charger les données dans PostgreSQL
+def charger_donnees_postgres(**kwargs):
+    ti = kwargs['ti']
+    df1_traite = ti.xcom_pull(task_ids='traiter_df1')
+    df2_traite = ti.xcom_pull(task_ids='traiter_df2')
+
+    # Connexion à PostgreSQL
+    hook = PostgresHook(
+        postgres_conn_id='postgres_conn',  # ID de la connexion (optionnel si on utilise les paramètres directs)
+        host=POSTGRES_CONN['host'],
+        port=POSTGRES_CONN['port'],
+        dbname=POSTGRES_CONN['database'],
+        user=POSTGRES_CONN['user'],
+        password=POSTGRES_CONN['password']
+    )
+    conn = hook.get_conn()
+    cursor = conn.cursor()
+
+    # Charger df1_traite dans la table 'achats'
+    for _, row in df1_traite.iterrows():
+        cursor.execute(
+            """
+            INSERT INTO achats (id, montant, date)
+            VALUES (%s, %s, %s)
+            """,
+            (row['id'], row['montant'], row['date'])
+        )
+
+    # Charger df2_traite dans la table 'ventes'
+    for _, row in df2_traite.iterrows():
+        cursor.execute(
+            """
+            INSERT INTO ventes (produit, quantite, prix)
+            VALUES (%s, %s, %s)
+            """,
+            (row['produit'], row['quantite'], row['prix'])
+        )
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+# Définir le DAG
+default_args = {
+    'owner': 'airflow',
+    'depends_on_past': False,
+    'start_date': datetime(2023, 10, 1),
+    'retries': 1,
+    'retry_delay': timedelta(minutes=5),
+}
+
+with DAG(
+    dag_id='traitement_dfs',
+    default_args=default_args,
+    schedule_interval='0 8 * * *',  # Exécution quotidienne à 8h
+    catchup=False,
+) as dag:
+
+    # Tâche 1 : Traiter df1 (achats)
+    task_traiter_df1 = PythonOperator(
+        task_id='traiter_df1',
+        python_callable=traiter_df1,
+    )
+
+    # Tâche 2 : Traiter df2 (flux de ventes)
+    task_traiter_df2 = PythonOperator(
+        task_id='traiter_df2',
+        python_callable=traiter_df2,
+    )
+
+    # Tâche 3 : Charger les données dans PostgreSQL
+    task_charger_postgres = PythonOperator(
+        task_id='charger_donnees_postgres',
+        python_callable=charger_donnees_postgres,
+    )
+
+    # Définir les dépendances
+    task_traiter_df1 >> task_charger_postgres
+    task_traiter_df2 >> task_charger_postgres
