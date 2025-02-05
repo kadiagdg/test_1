@@ -116,3 +116,34 @@ with DAG(
     # Définir les dépendances
     task_traiter_df1 >> task_charger_postgres
     task_traiter_df2 >> task_charger_postgres
+
+
+______
+
+from faker import Faker
+import random
+
+# Initialisation de Faker
+fake = Faker('fr_FR')  # 'fr_FR' pour des données en français
+
+# Génération des données
+data = []
+for i in range(30):
+    if i % 10 == 0:
+        # Générer de nouvelles valeurs pour chaque groupe de 10 lignes
+        nom = fake.last_name()
+        code = fake.random_int(min=1000, max=9999)
+        age = fake.random_int(min=18, max=65)
+        num_cpte = fake.iban()
+    
+    # Ajouter les données à la liste
+    data.append({
+        'Nom': nom,
+        'Code': code,
+        'Age': age,
+        'Num Compte': num_cpte
+    })
+
+# Affichage des données
+for idx, row in enumerate(data, start=1):
+    print(f"Ligne {idx}: {row}")
