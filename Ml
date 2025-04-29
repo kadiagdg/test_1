@@ -1,0 +1,3 @@
+De notre côté, nous avons constaté dans la base des données de mauvaise qualité, notamment au niveau de la description des transactions : les informations présentes ne permettent pas de reconstituer correctement les codes IM ISIN.
+
+C’est la raison pour laquelle nous sollicitons votre appui pour corriger ces lignes, en vous basant si possible sur les historiques de main courante dont vous disposez. Cela nous permettrait de fiabiliser les données et de finaliser les traitements en cours.
