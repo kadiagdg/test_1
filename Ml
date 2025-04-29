@@ -1,3 +1,55 @@
-De notre côté, nous avons constaté dans la base des données de mauvaise qualité, notamment au niveau de la description des transactions : les informations présentes ne permettent pas de reconstituer correctement les codes IM ISIN.
+import pandas as pd
+from datetime import timedelta
 
-C’est la raison pour laquelle nous sollicitons votre appui pour corriger ces lignes, en vous basant si possible sur les historiques de main courante dont vous disposez. Cela nous permettrait de fiabiliser les données et de finaliser les traitements en cours.
+# Exemple de paramètres
+jours_fenetre = 15  # ou 30 selon besoin
+
+# Convertir les dates au bon format
+df_solde['date'] = pd.to_datetime(df_solde['date'])
+df_produits['date_ouverture'] = pd.to_datetime(df_produits['date_ouverture'])
+
+# Étendre df_produits à chaque mois jusqu'à la fin des données solde
+max_date = df_solde['date'].max()
+
+def generer_dates_anniversaire(row):
+    dates = pd.date_range(start=row['date_ouverture'], end=max_date, freq='MS')
+    return pd.DataFrame({
+        'id': row['id'],
+        'date_anniversaire': [d.replace(day=row['date_ouverture'].day) if d.day >= row['date_ouverture'].day else d + pd.DateOffset(months=1) for d in dates],
+        'montant_pack': row['montant_pack']
+    })
+
+df_anniversaires = pd.concat([generer_dates_anniversaire(row) for _, row in df_produits.iterrows()], ignore_index=True)
+
+# Jointure sur ID + dates (dans une fenêtre)
+results = []
+
+for _, row in df_anniversaires.iterrows():
+    id_client = row['id']
+    date_debut = row['date_anniversaire']
+    date_fin = date_debut + timedelta(days=jours_fenetre)
+
+    # Filtrer le solde de cet ID entre date_anniversaire et date_anniversaire + N jours
+    sous_df = df_solde[(df_solde['id'] == id_client) &
+                       (df_solde['date'] >= date_debut) &
+                       (df_solde['date'] <= date_fin)]
+
+    # Vérifier s’il y a un solde suffisant
+    est_suffisant = (sous_df['solde'] >= row['montant_pack']).any()
+
+    results.append({
+        'id': id_client,
+        'date_anniversaire': date_debut,
+        'montant_pack': row['montant_pack'],
+        'solde_suffisant': est_suffisant
+    })
+
+df_resultat = pd.DataFrame(results)
+_________
+
+df_final = df_resultat.groupby('id')['solde_suffisant'].any().reset_index()
+df_final.rename(columns={'solde_suffisant': 'solde_suffisant_au_moins_une_fois'}, inplace=True)
+___
+df_final = df_resultat.groupby('id')['solde_suffisant'].any().reset_index()
+df_final = df_final[df_final['solde_suffisant'] == False]
+
