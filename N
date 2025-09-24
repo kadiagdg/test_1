@@ -1,0 +1,116 @@
+import re
+import csv
+from pathlib import Path
+
+def parse_atm_logs(log_file_path: str, csv_file_path: str) -> None:
+    fieldnames = [
+        'seq', 'session_id', 'card_number', 'last_timestamp', 'language',
+        'chip_application', 'return_code', 'pin_entered', 'transaction_type',
+        'amount', 'atm_id', 'authorization_requested', 'authorized', 'stan',
+        'chip_approved', 'cash_dispensed', 'card_ejected', 'card_taken',
+        'dispense_details', 'total_cash', 'cash_presented', 'cash_taken',
+        'transaction_completed', 'session_terminated', 'status', 'reason', 
+        'exception', 'source', 'origin', 'authorization_message'
+    ]
+
+    regex_patterns = {
+        "card_number": re.compile(r"Card number:\s*([\d*\s]+)"),
+        "seq": re.compile(r"SEQ:\s*(\d+)"),
+        "session_id": re.compile(r"Current session ID:\s*(\d+)"),
+        "last_timestamp": re.compile(r"(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2})"),
+        "language": re.compile(r"Selected language\s*:?\s*(\w+)", re.IGNORECASE),
+        "chip_application": re.compile(r"Chip application\s*:\s*([A-Za-z0-9]+)"),
+        "return_code": re.compile(r"Returned code\s*:? ?(\d+)"),
+        "transaction_type": re.compile(r"Transaction selected\s*:\s*(\w+)\s+(\d+)\s+on ATM\s*:\s*([\w_]+)"),
+        "stan": re.compile(r"STAN\s*:\s*(\d+)"),
+        "total_cash": re.compile(r"Total cash dispensed:\s*([\d\s]+)\s*XOF"),
+        "reason": re.compile(r"Reason\s*:\s*([^\n]+)"),
+        "exception": re.compile(r"Exception occured\s*:\s*(\w+)"),
+        "source": re.compile(r"Source\s*:\s*([\w\.]+)"),
+        "origin": re.compile(r"Origin\s*:\s*(\w+)"),
+        "authorization_message": re.compile(r"^(I.*#.*#)$")
+    }
+
+    text = Path(log_file_path).read_text(encoding="utf-8")
+    # ✅ Découper par session terminée
+    sessions = re.split(r"Session terminated", text)
+
+    transactions = []
+    for session in sessions:
+        if not session.strip():
+            continue
+
+        # ➤ Chercher le card_number une seule fois
+        m_card = regex_patterns["card_number"].search(session)
+        card_number = m_card.group(1).replace(" ", "") if m_card else ""
+
+        dispense_details = []
+        in_dispense = False
+        tx = {}
+
+        # ➤ Parcourir toutes les lignes de la session
+        for line in session.strip().splitlines():
+            line = line.strip()
+
+            # Appliquer les autres regex
+            for key, pattern in regex_patterns.items():
+                if key == "card_number":
+                    continue  # déjà géré
+                m = pattern.search(line)
+                if m:
+                    if key == "transaction_type":
+                        tx["transaction_type"], tx["amount"], tx["atm_id"] = m.groups()
+                    elif key == "total_cash":
+                        tx["total_cash"] = m.group(1).replace(" ", "")
+                    else:
+                        tx[key] = m.group(1)
+
+            # Flags simples
+            if "Pin entered" in line: tx["pin_entered"] = "Yes"
+            if "Authorization requested" in line: tx["authorization_requested"] = "Yes"
+            if "Authorized" in line: tx["authorized"] = "Yes"
+            if "Chip authorization approved" in line: tx["chip_approved"] = "Yes"
+            if "Cash dispensed" in line: tx["cash_dispensed"] = "Yes"
+            if "Card ejected" in line: tx["card_ejected"] = "Yes"
+            if "Card taken" in line: tx["card_taken"] = "Yes"
+            if "Cash presented" in line: tx["cash_presented"] = "Yes"
+            if "Cash taken" in line: tx["cash_taken"] = "Yes"
+            if "Transaction completed" in line:
+                tx["transaction_completed"] = "Yes"
+                tx["status"] = "COMPLETED"
+
+            # Détails des cassettes
+            if "Dispense details:" in line:
+                in_dispense = True
+                continue
+            if in_dispense:
+                if "Total cash dispensed" in line:
+                    in_dispense = False
+                else:
+                    dispense_details.append(re.sub(r"^->\s*", "", line))
+
+        if dispense_details:
+            tx["dispense_details"] = " | ".join(dispense_details)
+
+        # Valeurs par défaut
+        tx.setdefault("status", "FAILED" if tx.get("return_code") not in (None, "0") else "UNKNOWN")
+        if "total_cash" not in tx and "amount" in tx:
+            tx["total_cash"] = tx["amount"]
+
+        # ➤ Associer le card_number à chaque ligne
+        tx["card_number"] = card_number
+
+        # Ajout de la ligne au CSV
+        transactions.append({col: tx.get(col, "") for col in fieldnames})
+
+    # ✅ Écriture CSV
+    with open(csv_file_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(transactions)
+
+    print(f"✅ {len(transactions)} transactions exportées dans {csv_file_path}")
+
+
+if __name__ == "__main__":
+    parse_atm_logs("data/atm_logs.txt", "data/transactions_ordered.csv")
