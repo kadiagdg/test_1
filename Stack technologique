@@ -1,0 +1,102 @@
+ 1️⃣ Stack Technologique
+
+### 🌐 **Frontend (Interface utilisateur)**
+
+| Composant                | Choix recommandé                           | Rôle                                                           |
+| ------------------------ | ------------------------------------------ | -------------------------------------------------------------- |
+| **Langages**             | **HTML5**, **CSS3**, **JavaScript (ES6+)** | Structure, style et interactivité.                             |
+| **Framework UI**         | **React.js** ou **Vue.js**                 | Pages dynamiques, composants réutilisables, navigation fluide. |
+| **Gestion du style**     | Tailwind CSS (ou Bootstrap)                | Design moderne, responsive.                                    |
+| **Routing**              | React Router (ou Vue Router)               | Navigation entre les pages (Activités, Évènements, Use Cases). |
+| **Formulaires & Upload** | React Hook Form + Axios                    | Saisie des use cases, envoi de fichiers/images.                |
+
+---
+
+### ⚙️ **Backend (Logique métier & API)**
+
+| Composant             | Choix recommandé               | Rôle                                                               |
+| --------------------- | ------------------------------ | ------------------------------------------------------------------ |
+| **Langage**           | **Node.js**                    | Runtime JavaScript côté serveur (rapide et léger).                 |
+| **Framework**         | **Express.js**                 | Création des API REST pour gérer activités, évènements, use cases. |
+| **API**               | REST ou GraphQL                | Communication entre front et base de données.                      |
+| **Authentification**  | JWT (JSON Web Token) ou OAuth2 | Connexion des collègues (compte entreprise ou SSO).                |
+| **Stockage fichiers** | S3 (AWS) ou Azure Blob         | Hébergement des images/vidéos des évènements.                      |
+
+---
+
+### 🗂️ **Base de Données**
+
+| Type                  | Choix recommandé | Rôle                                                                      |
+| --------------------- | ---------------- | ------------------------------------------------------------------------- |
+| **Relationnelle**     | **PostgreSQL**   | Gérer les tables : `users`, `activities`, `events`, `use_cases`.          |
+| **Cache** (optionnel) | Redis            | Améliorer les performances pour les pages les plus visitées (évènements). |
+
+---
+
+### ☁️ **Infrastructure & Déploiement**
+
+| Composant             | Choix recommandé                          | Rôle                                             |
+| --------------------- | ----------------------------------------- | ------------------------------------------------ |
+| **Serveur Web/Proxy** | **Nginx**                                 | Reverse proxy, HTTPS (Let's Encrypt).            |
+| **Conteneurisation**  | Docker                                    | Déploiement homogène en dev et prod.             |
+| **Hébergement**       | AWS EC2 / Azure App Service / VPS interne | Déploiement sécurisé (cloud ou serveur interne). |
+| **CI/CD**             | GitHub Actions ou GitLab CI               | Automatiser les tests et le déploiement.         |
+
+---
+
+### 💻 **Environnement de Développement**
+
+| Outil                                        | Rôle                            |
+| -------------------------------------------- | ------------------------------- |
+| **IDE** : Visual Studio Code                 | Développement front et back.    |
+| **Gestion de version** : Git + GitHub/GitLab | Collaboration et suivi du code. |
+| **Gestion des dépendances** : npm ou yarn    | Installation des packages.      |
+| **Tests** : Jest / Mocha                     | Tests unitaires et intégration. |
+| **Gestion projet** : Jira / Trello           | Suivi des tâches et sprints.    |
+
+---
+
+## 🌟 2️⃣ Fonctionnalités Clés du Site
+
+| Module                  | Fonctionnalités détaillées                                                                                                                                                                                            |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Page d’accueil**      | Présentation de la direction informatique, mise en avant des prochains évènements.                                                                                                                                    |
+| **Activités**           | Liste dynamique des projets/initiatives, filtres par année ou domaine.                                                                                                                                                |
+| **Évènements**          | Agenda interactif (conférences, ateliers), inscription en ligne.                                                                                                                                                      |
+| **Use Cases**           | ✅ **Formulaire sécurisé** pour permettre aux collègues de :<br>• Proposer un nouveau use case<br>• Ajouter description, images, fichiers<br>• Statut : *En attente* / *Validé* (workflow de validation par un admin). |
+| **Back-office (Admin)** | Interface interne pour :<br>• Valider/modérer les use cases<br>• Gérer les évènements et activités<br>• Créer/éditer des utilisateurs.                                                                                |
+| **Authentification**    | Compte interne ou connexion via SSO entreprise.                                                                                                                                                                       |
+| **Recherche**           | Barre de recherche pour filtrer les activités et use cases.                                                                                                                                                           |
+| **Notifications**       | Email ou pop-up après validation d’un use case.                                                                                                                                                                       |
+
+---
+
+## ⚡ Exemple d’Architecture
+
+```
+[React Frontend] <--> [API REST/Express] <--> [PostgreSQL DB]
+         |                        |
+       Docker                    Docker
+         \_________ Nginx Reverse Proxy _______/
+                  Hébergement (AWS/Azure/Serveur interne)
+```
+
+---
+
+### 💡 Variantes possibles
+
+* **Alternative Python** : Django + Django Rest Framework + PostgreSQL + React.
+* **Alternative Microsoft** : ASP.NET Core + SQL Server + Angular (souvent choisi dans les SI d’entreprise).
+
+---
+
+## ✅ En résumé
+
+Pour un **site institutionnel dynamique** qui présente les **activités**, les **évènements** et permet la **soumission de use cases**,
+➡️ **Stack moderne recommandée** :
+
+* **Frontend** : React + Tailwind CSS
+* **Backend** : Node.js + Express
+* **Base de données** : PostgreSQL
+* **Infra** : Docker + Nginx + CI/CD (GitHub Actions/GitLab CI)
+* **Fonctionnalités clés** : pages dynamiques, workflow de validation des use cases, authentification, back-office admin.
