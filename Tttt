@@ -1,0 +1,22 @@
+import pandas as pd
+
+# 1) même rib  → df0
+dupli_rib = df['rib'].duplicated(keep=False)
+df0 = df[dupli_rib].copy()
+
+# df restant
+df_rest = df[~dupli_rib].copy()
+
+# 2) dans le restant : si même idgroupe avec même emetteur OU même recepteur → df1
+
+# même emmeteur  : "client" (j’ai compris client = sender)
+dupli_sender = df_rest.groupby('idgroupe')['client'].transform(lambda s: s.duplicated(keep=False))
+
+# même recepteur : "clirecept"
+dupli_receiver = df_rest.groupby('idgroupe')['clirecept'].transform(lambda s: s.duplicated(keep=False))
+
+mask_df1 = dupli_sender | dupli_receiver
+df1 = df_rest[mask_df1].copy()
+
+# 3) le reste  → df2
+df2 = df_rest[~mask_df1].copy()
