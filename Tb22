@@ -1,0 +1,48 @@
+import pandas as pd
+
+# Concaténer
+df = pd.concat([df_joint1, df_joint], ignore_index=True)
+
+# Étape 1
+df0 = df[df.duplicated('rib_donneur', keep=False) | df.duplicated('rib_benef', keep=False)].copy()
+df_restant = df[~(df.duplicated('rib_donneur', keep=False) | df.duplicated('rib_benef', keep=False))].copy()
+
+# Étape 2  
+df1 = df_restant[df_restant.duplicated(['Cluster ID', 'CLI_s'], keep=False) | df_restant.duplicated(['Cluster ID', 'CLI_Emet'], keep=False)].copy()
+df2 = df_restant[~(df_restant.duplicated(['Cluster ID', 'CLI_s'], keep=False) | df_restant.duplicated(['Cluster ID', 'CLI_Emet'], keep=False))].copy()
+
+print(f"df0: {len(df0)}, df1: {len(df1)}, df2: {len(df2)}")
+
+
+--------
+import pandas as pd
+
+def separer_groupes(df):
+    # Étape 1: Même rib_donneur ou même rib_benef
+    condition_rib = (
+        df.duplicated('rib_donneur', keep=False) | 
+        df.duplicated('rib_benef', keep=False)
+    )
+    df0 = df[condition_rib].copy()
+    df_restant = df[~condition_rib].copy()
+    
+    # Étape 2: Même Cluster ID avec même CLI_s ou CLI_Emet
+    condition_cli = (
+        df_restant.duplicated(['Cluster ID', 'CLI_s'], keep=False) | 
+        df_restant.duplicated(['Cluster ID', 'CLI_Emet'], keep=False)
+    )
+    df1 = df_restant[condition_cli].copy()
+    df2 = df_restant[~condition_cli].copy()
+    
+    return df0, df1, df2
+
+# Concaténer les deux DataFrames
+df_total = pd.concat([df_joint1, df_joint], ignore_index=True)
+
+# Appliquer la fonction
+df0, df1, df2 = separer_groupes(df_total)
+
+# Afficher les résultats
+print(f"df0 (mêmes rib_donneur ou rib_benef): {len(df0)} lignes")
+print(f"df1 (mêmes Cluster ID avec mêmes CLI): {len(df1)} lignes")
+print(f"df2 (clients uniques): {len(df2)} lignes")
