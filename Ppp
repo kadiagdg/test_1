@@ -1,0 +1,19 @@
+import pandas as pd
+
+def regle(g):
+    codes = g['code']
+    return codes.isna().any() or codes.duplicated().any()
+
+# appliquer la règle au niveau groupe idmatch, nom
+rules = df.groupby(['idmatch','nom']).apply(regle).reset_index(name='ok')
+
+# merge pour savoir pour chaque ligne si ok ou pas
+df = df.merge(rules, on=['idmatch','nom'], how='left')
+
+# split
+df_ok = df[df['ok'] == True].copy()
+df_reste = df[df['ok'] == False].copy()
+
+# si tu veux supprimer la colonne temporaire 'ok'
+df_ok = df_ok.drop(columns='ok')
+df_reste = df_reste.drop(columns='ok')
