@@ -1,0 +1,98 @@
+import pandas as pd
+from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+
+# ======================
+# THÈME CORPORATE
+# ======================
+COLOR_HEADER = "1F4E78"
+COLOR_HEADER_TEXT = "FFFFFF"
+COLOR_INFO_BG = "E7EEF6"
+COLOR_BORDER = "D9D9D9"
+
+HEADER_FILL = PatternFill("solid", fgColor=COLOR_HEADER)
+HEADER_FONT = Font(color=COLOR_HEADER_TEXT, bold=True)
+CENTER_ALIGN = Alignment(horizontal="center")
+
+THIN_BORDER = Border(
+    left=Side(style="thin", color=COLOR_BORDER),
+    right=Side(style="thin", color=COLOR_BORDER),
+    top=Side(style="thin", color=COLOR_BORDER),
+    bottom=Side(style="thin", color=COLOR_BORDER),
+)
+
+def styliser_feuille(sheet, header_row):
+    if sheet.max_row < header_row:
+        return
+
+    for col in range(1, sheet.max_column + 1):
+        # Header
+        cell = sheet.cell(row=header_row, column=col)
+        cell.fill = HEADER_FILL
+        cell.font = HEADER_FONT
+        cell.alignment = CENTER_ALIGN
+        cell.border = THIN_BORDER
+
+        # Largeur colonne
+        sheet.column_dimensions[get_column_letter(col)].width = 20
+
+    # Bordures sur tout le tableau
+    for row in sheet.iter_rows(
+        min_row=header_row,
+        max_row=sheet.max_row,
+        max_col=sheet.max_column
+    ):
+        for cell in row:
+            cell.border = THIN_BORDER
+
+    sheet.freeze_panes = f"A{header_row + 1}"
+    sheet.auto_filter.ref = (
+        f"A{header_row}:{get_column_letter(sheet.max_column)}{sheet.max_row}"
+    )
+
+
+fichier_excel = "reporting_data_.xlsx"
+
+with pd.ExcelWriter(fichier_excel, engine="openpyxl") as writer:
+
+    # ======================
+    # ONGLET INDICATEURS
+    # ======================
+    df_indicateurs.to_excel(
+        writer,
+        sheet_name="Indicateurs",
+        index=False,
+        startrow=2
+    )
+
+    workbook = writer.book
+    sheet_ind = workbook["Indicateurs"]
+
+    # Ligne d'information
+    sheet_ind["A1"] = "Rapport quotidien – Indicateurs clés"
+    sheet_ind["A1"].font = Font(bold=True, color="2F2F2F")
+    sheet_ind["A1"].fill = PatternFill("solid", fgColor=COLOR_INFO_BG)
+
+    sheet_ind.merge_cells(
+        start_row=1,
+        start_column=1,
+        end_row=1,
+        end_column=df_indicateurs.shape[1]
+    )
+
+    # Style indicateurs (header ligne 3)
+    styliser_feuille(sheet_ind, header_row=3)
+
+    # ======================
+    # AUTRES ONGLETs
+    # ======================
+    autres_onglets = {
+        "Transactions": df_transactions,
+        "Soldes": df_soldes,
+        "Anomalies": df_anomalies
+    }
+
+    for nom, df in autres_onglets.items():
+        df.to_excel(writer, sheet_name=nom, index=False)
+        sheet = workbook[nom]
+        styliser_feuille(sheet, header_row=1)
