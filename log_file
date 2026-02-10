@@ -1,0 +1,164 @@
+import os
+import pandas as pd
+from datetime import datetime
+
+def executer_requetes(
+    conn,
+    date_debut,
+    date_fin,
+    repertoire_sortie,
+    liste_fonctions,
+    fichier_log="execution_log.csv"
+):
+    """
+    Exécute une liste de fonctions de requêtes et journalise les résultats
+    """
+
+    os.makedirs(repertoire_sortie, exist_ok=True)
+
+    logs = []
+
+    for func in liste_fonctions:
+        date_execution = datetime.now()
+        nom_fonction = func.__name__
+        nom_fichier = f"{nom_fonction}_{date_debut}_{date_fin}.csv"
+        chemin_fichier = os.path.join(repertoire_sortie, nom_fichier)
+
+        try:
+            # Exécution de la fonction
+            df = func(conn, date_debut, date_fin)
+
+            # Sauvegarde
+            df.to_csv(chemin_fichier, index=False)
+
+            nb_lignes = len(df)
+            taille_fichier = round(os.path.getsize(chemin_fichier) / 1024, 2)
+
+            statut = "SUCCESS"
+            message = "OK"
+
+        except Exception as e:
+            nb_lignes = 0
+            taille_fichier = 0
+            statut = "ERROR"
+            message = str(e)
+
+        logs.append({
+            "date_execution": date_execution,
+            "nom_fonction": nom_fonction,
+            "nom_fichier": nom_fichier,
+            "nb_lignes": nb_lignes,
+            "taille_fichier_Ko": taille_fichier,
+            "statut": statut,
+            "message": message
+        })
+
+    # Gestion du fichier log (append)
+    df_log = pd.DataFrame(logs)
+
+    if os.path.exists(fichier_log):
+        df_log.to_csv(fichier_log, mode="a", header=False, index=False)
+    else:
+        df_log.to_csv(fichier_log, index=False)
+_____________________________________________________________________________________________
+
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+
+def est_date_mois_precedent(date_parametre):
+    """
+    Vérifie si date_parametre == aujourd'hui - 1 mois
+    """
+    date_param = datetime.strptime(date_parametre, "%Y-%m-%d").date()
+    date_reference = (datetime.today() - relativedelta(months=1)).date()
+
+    return (
+        date_param.year == date_reference.year
+        and date_param.month == date_reference.month
+    )
+_______________________________________________________________________________________________
+
+def executer_requetes_conditionnelles(
+    conn,
+    date_debut,
+    date_fin,
+    repertoire_sortie,
+    liste_fonctions,
+    format_fichier="csv",
+    fichier_log="execution_log.csv",
+    environnement="DEV"
+):
+
+    import os
+    import time
+    import pandas as pd
+    import socket
+    import getpass
+    from datetime import datetime
+
+    os.makedirs(repertoire_sortie, exist_ok=True)
+
+    utilisateur = getpass.getuser()
+    machine = socket.gethostname()
+    logs = []
+
+    for func in liste_fonctions:
+
+        nom_fonction = func.__name__
+
+        # 🔍 Vérification règle métier
+        if not est_date_mois_precedent(date_fin):
+            print(f"[SKIP] Donnée non présente pour {nom_fonction}")
+            continue  # on passe à la fonction suivante
+
+        start_time = time.time()
+        date_execution = datetime.now()
+        nom_fichier = f"{nom_fonction}_{date_debut}_{date_fin}.{format_fichier}"
+        chemin_fichier = os.path.join(repertoire_sortie, nom_fichier)
+
+        try:
+            df = func(conn, date_debut, date_fin)
+
+            sauvegarder_dataframe(df, chemin_fichier, format_fichier)
+
+            nb_lignes = len(df)
+            taille_fichier = round(os.path.getsize(chemin_fichier) / 1024, 2)
+            statut = "SUCCESS"
+            niveau_log = "INFO"
+            message = "OK"
+
+        except Exception as e:
+            nb_lignes = 0
+            taille_fichier = 0
+            statut = "ERROR"
+            niveau_log = "ERROR"
+            message = str(e)
+
+        duree = round(time.time() - start_time, 2)
+
+        # ✅ Écriture dans le log UNIQUEMENT si exécuté
+        logs.append({
+            "date_execution": date_execution,
+            "utilisateur": utilisateur,
+            "nom_fonction": nom_fonction,
+            "format_fichier": format_fichier,
+            "nom_fichier": nom_fichier,
+            "nb_lignes": nb_lignes,
+            "taille_fichier_Ko": taille_fichier,
+            "duree_execution_sec": duree,
+            "niveau_log": niveau_log,
+            "statut": statut,
+            "message": message,
+            "machine": machine,
+            "environnement": environnement
+        })
+
+    # ✍️ Append log uniquement si au moins une exécution
+    if logs:
+        df_log = pd.DataFrame(logs)
+        if os.path.exists(fichier_log):
+            df_log.to_csv(fichier_log, mode="a", header=False, index=False)
+        else:
+            df_log.to_csv(fichier_log, index=False)
+
+____________________________________
