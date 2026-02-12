@@ -1,0 +1,137 @@
+import pandas as pd
+
+def client(conn, startdate1, enddate1, outputfile):
+    query = """
+        SELECT *
+        FROM clients
+        WHERE date_creation BETWEEN %s AND %s
+    """
+    df = pd.read_sql(query, conn, params=[startdate1, enddate1])
+    df.to_csv(outputfile, index=False)
+
+    return len(df)
+
+# 🔖 métadonnée pour l’orchestrateur
+client.date_reference = "date_debut1"
+
+----------
+
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+
+def est_mois_precedent(date_str):
+    d = datetime.strptime(date_str, "%Y-%m-%d").date()
+    ref = (datetime.today() - relativedelta(months=1)).date()
+    return d.year == ref.year and d.month == ref.month
+-----_------------
+
+def executer_requetes_conditionnelles(
+    conn,
+    date_debut,
+    date_debut1,
+    date_fin,
+    repertoire_sortie,
+    liste_fonctions,
+    fichier_log="execution_log.csv",
+    environnement="DEV"
+):
+
+    import os
+    import time
+    import pandas as pd
+    import socket
+    import getpass
+    from datetime import datetime
+
+    os.makedirs(repertoire_sortie, exist_ok=True)
+
+    utilisateur = getpass.getuser()
+    machine = socket.gethostname()
+    logs = []
+
+    for func in liste_fonctions:
+        nom_fonction = func.__name__
+
+        # 🔍 Quelle date utiliser ?
+        ref_type = getattr(func, "date_reference", None)
+
+        if ref_type == "date_debut":
+            date_reference = date_debut
+        elif ref_type == "date_debut1":
+            date_reference = date_debut1
+        else:
+            print(f"[SKIP] {nom_fonction} : date de référence non définie")
+            continue
+
+        # ⛔ règle M-1
+        if not est_mois_precedent(date_reference):
+            print(f"[SKIP] Donnée non présente pour {nom_fonction}")
+            continue
+
+        # ▶️ Exécution
+        start_time = time.time()
+        date_execution = datetime.now()
+
+        nom_fichier = f"{nom_fonction}_{date_reference}.csv"
+        chemin_fichier = os.path.join(repertoire_sortie, nom_fichier)
+
+        try:
+            nb_lignes = func(
+                conn,
+                date_debut,
+                date_fin,
+                chemin_fichier
+            )
+
+            taille_fichier = round(os.path.getsize(chemin_fichier) / 1024, 2)
+            statut = "SUCCESS"
+            niveau_log = "INFO"
+            message = "OK"
+
+        except Exception as e:
+            nb_lignes = 0
+            taille_fichier = 0
+            statut = "ERROR"
+            niveau_log = "ERROR"
+            message = str(e)
+
+        duree = round(time.time() - start_time, 2)
+
+        # ✅ log uniquement si exécuté
+        logs.append({
+            "date_execution": date_execution,
+            "utilisateur": utilisateur,
+            "nom_fonction": nom_fonction,
+            "date_reference": date_reference,
+            "nom_fichier": nom_fichier,
+            "nb_lignes": nb_lignes,
+            "taille_fichier_Ko": taille_fichier,
+            "duree_execution_sec": duree,
+            "niveau_log": niveau_log,
+            "statut": statut,
+            "message": message,
+            "machine": machine,
+            "environnement": environnement
+        })
+
+    # ✍️ écriture du log seulement si exécution réelle
+    if logs:
+        df_log = pd.DataFrame(logs)
+        if os.path.exists(fichier_log):
+            df_log.to_csv(fichier_log, mode="a", header=False, index=False)
+        else:
+            df_log.to_csv(fichier_log, index=False)
+
+----------
+
+chemin = "/data/exports/"
+
+executer_requetes_conditionnelles(
+    conn=con,
+    date_debut="2024-01-01",
+    date_debut1="2024-02-01",
+    date_fin="2024-02-29",
+    repertoire_sortie=chemin,
+    liste_fonctions=[client],
+    environnement="PROD"
+)
