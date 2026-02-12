@@ -1,0 +1,285 @@
+import pandas as pd
+import warnings
+
+
+def join_transactions_by_minute_optimal(
+    dfa,
+    dfb,
+    dt_a,
+    dt_b,
+    montant_col,
+    tz_a="UTC",
+    tz_b="Europe/Paris",
+    handle_ambiguous="infer",  # 'infer', 'NaT', ou 'raise'
+    handle_duplicates="keep_all"  # 'keep_all', 'keep_first', 'flag'
+):
+    """
+    Jointure fiable des transactions à la minute près avec gestion DST robuste.
+    
+    Paramètres:
+    -----------
+    dfa, dfb : DataFrame
+        DataFrames contenant les transactions
+    dt_a, dt_b : str
+        Noms des colonnes datetime
+    montant_col : str
+        Nom de la colonne montant (doit exister dans les deux DataFrames)
+    tz_a, tz_b : str
+        Fuseaux horaires des données sources
+    handle_ambiguous : str
+        - 'infer' : tente de déduire l'heure correcte (recommandé)
+        - 'NaT' : exclut les heures ambiguës
+        - 'raise' : lève une exception
+    handle_duplicates : str
+        - 'keep_all' : garde tous les duplicatas de jointure
+        - 'keep_first' : garde uniquement la première occurrence
+        - 'flag' : ajoute un flag pour identifier les duplicatas
+    
+    Retourne:
+    ---------
+    DataFrame joint avec métadonnées de jointure
+    """
+    # Validation des inputs
+    if montant_col not in dfa.columns or montant_col not in dfb.columns:
+        raise ValueError(f"La colonne '{montant_col}' doit exister dans les deux DataFrames")
+    
+    if dt_a not in dfa.columns or dt_b not in dfb.columns:
+        raise ValueError(f"Les colonnes de dates '{dt_a}' et '{dt_b}' doivent exister")
+    
+    # Copies pour éviter les modifications
+    dfa = dfa.copy()
+    dfb = dfb.copy()
+    
+    # Fonction interne pour normalisation timezone
+    def safe_tz_convert(series, tz, name="datetime"):
+        """Convertit une série en UTC avec gestion DST robuste."""
+        series = pd.to_datetime(series)
+        
+        # Si déjà timezone-aware, convertir directement
+        if series.dt.tz is not None:
+            return series.dt.tz_convert("UTC")
+        
+        # Sinon, localiser puis convertir
+        try:
+            if handle_ambiguous == "infer":
+                # Essayer 'infer', sinon fallback sur première occurrence (False)
+                try:
+                    series_tz = series.dt.tz_localize(
+                        tz,
+                        nonexistent="shift_forward",
+                        ambiguous="infer"
+                    )
+                except:
+                    # Si 'infer' échoue, assumer première occurrence du DST fall back
+                    series_tz = series.dt.tz_localize(
+                        tz,
+                        nonexistent="shift_forward",
+                        ambiguous=False  # False = première occurrence (avant le recul)
+                    )
+            elif handle_ambiguous == "NaT":
+                series_tz = series.dt.tz_localize(
+                    tz,
+                    nonexistent="shift_forward",
+                    ambiguous="NaT"
+                )
+            else:  # 'raise'
+                series_tz = series.dt.tz_localize(
+                    tz,
+                    nonexistent="shift_forward",
+                    ambiguous="raise"
+                )
+            
+            return series_tz.dt.tz_convert("UTC")
+            
+        except Exception as e:
+            raise ValueError(f"Erreur de conversion timezone pour {name}: {e}")
+    
+    # Conversion en UTC
+    dfa["dt_utc"] = safe_tz_convert(dfa[dt_a], tz_a, name=f"dfa[{dt_a}]")
+    dfb["dt_utc"] = safe_tz_convert(dfb[dt_b], tz_b, name=f"dfb[{dt_b}]")
+    
+    # Supprimer les NaT si présents
+    n_nat_a = dfa["dt_utc"].isna().sum()
+    n_nat_b = dfb["dt_utc"].isna().sum()
+    
+    if n_nat_a > 0 or n_nat_b > 0:
+        warnings.warn(
+            f"Suppression de {n_nat_a} lignes (dfa) et {n_nat_b} lignes (dfb) "
+            f"avec dates ambiguës/invalides (NaT)",
+            UserWarning
+        )
+        dfa = dfa.dropna(subset=["dt_utc"])
+        dfb = dfb.dropna(subset=["dt_utc"])
+    
+    # Créer la clé de jointure à la minute (ignorer secondes/ms)
+    dfa["dt_minute"] = dfa["dt_utc"].dt.floor("min")
+    dfb["dt_minute"] = dfb["dt_utc"].dt.floor("min")
+    
+    # Ajouter des index pour traçabilité
+    dfa["_idx_a"] = range(len(dfa))
+    dfb["_idx_b"] = range(len(dfb))
+    
+    # Jointure sur minute + montant
+    df_join = dfa.merge(
+        dfb,
+        on=["dt_minute", montant_col],
+        how="inner",
+        suffixes=("_a", "_b")
+    )
+    
+    # Gestion des duplicatas de jointure
+    if handle_duplicates == "keep_first":
+        df_join = df_join.drop_duplicates(subset=["_idx_a"], keep="first")
+    elif handle_duplicates == "flag":
+        df_join["is_duplicate_match"] = df_join.duplicated(subset=["_idx_a"], keep=False)
+    
+    # Calculer le delta en secondes (optionnel, pour analyse)
+    df_join["delta_seconds"] = (
+        df_join["dt_utc_b"] - df_join["dt_utc_a"]
+    ).dt.total_seconds()
+    
+    # Statistiques de jointure
+    stats = {
+        "n_input_a": len(dfa),
+        "n_input_b": len(dfb),
+        "n_matched": len(df_join),
+        "n_unmatched_a": len(dfa) - df_join["_idx_a"].nunique(),
+        "n_unmatched_b": len(dfb) - df_join["_idx_b"].nunique(),
+    }
+    
+    # Stocker les stats dans les attributs (si besoin)
+    df_join.attrs["join_stats"] = stats
+    
+    return df_join
+
+
+# ==============================================================================
+# TESTS AVEC DONNÉES RÉELLES
+# ==============================================================================
+
+if __name__ == "__main__":
+    print("=" * 80)
+    print("TEST DE LA FONCTION DE JOINTURE")
+    print("=" * 80)
+    
+    # Création des DataFrames de test
+    dfa = pd.DataFrame({
+        "id_trx": [1, 2, 3, 4, 5],
+        "date_heure_a": [
+            "2024-02-15 10:00:12",  # journée normale
+            "2024-03-31 01:30:45",  # avant heure inexistante DST (spring forward)
+            "2024-10-27 01:30:30",  # heure dupliquée DST (fall back)
+            "2024-07-01 14:45:59",  # été
+            "2024-07-01 14:45:10"   # même minute que ligne précédente
+        ],
+        "montant": [1000, 500, 750, 200, 200]
+    })
+    
+    dfb = pd.DataFrame({
+        "ref_trx": ["A", "B", "C", "D", "E"],
+        "date_heure_b": [
+            "2024-02-15 11:00:05",  # correspond à UTC 10:00 (Paris UTC+1)
+            "2024-03-31 03:30:00",  # heure après spring forward (02:30 n'existe pas)
+            "2024-10-27 02:30:00",  # heure dupliquée (peut être 00:30 ou 01:30 UTC)
+            "2024-07-01 16:45:00",  # été UTC+2
+            "2024-07-01 16:45:30"   # même minute que ligne précédente
+        ],
+        "montant": [1000, 500, 750, 200, 200]
+    })
+    
+    print("\n📊 DataFrame A (source UTC):")
+    print(dfa)
+    
+    print("\n📊 DataFrame B (source Europe/Paris):")
+    print(dfb)
+    
+    print("\n" + "=" * 80)
+    print("JOINTURE AVEC GESTION DST 'infer'")
+    print("=" * 80)
+    
+    # Exécution de la jointure
+    df_join = join_transactions_by_minute_optimal(
+        dfa=dfa,
+        dfb=dfb,
+        dt_a="date_heure_a",
+        dt_b="date_heure_b",
+        montant_col="montant",
+        tz_a="UTC",
+        tz_b="Europe/Paris",
+        handle_ambiguous="infer",
+        handle_duplicates="flag"
+    )
+    
+    print("\n✅ Résultat de la jointure:")
+    print(df_join[[
+        "id_trx", "ref_trx", "montant",
+        "date_heure_a", "date_heure_b",
+        "dt_minute", "delta_seconds", "is_duplicate_match"
+    ]])
+    
+    print("\n📈 Statistiques de jointure:")
+    for key, value in df_join.attrs.get("join_stats", {}).items():
+        print(f"  {key}: {value}")
+    
+    # Test avec NaT pour heures ambiguës
+    print("\n" + "=" * 80)
+    print("JOINTURE AVEC GESTION DST 'NaT' (exclut heures ambiguës)")
+    print("=" * 80)
+    
+    df_join_nat = join_transactions_by_minute_optimal(
+        dfa=dfa,
+        dfb=dfb,
+        dt_a="date_heure_a",
+        dt_b="date_heure_b",
+        montant_col="montant",
+        tz_a="UTC",
+        tz_b="Europe/Paris",
+        handle_ambiguous="NaT",
+        handle_duplicates="keep_all"
+    )
+    
+    print("\n✅ Résultat avec exclusion ambiguës:")
+    print(df_join_nat[[
+        "id_trx", "ref_trx", "montant",
+        "dt_minute", "delta_seconds"
+    ]])
+    
+    # Analyse des non-matchés
+    print("\n" + "=" * 80)
+    print("ANALYSE DES NON-MATCHÉS")
+    print("=" * 80)
+    
+    matched_a = df_join["id_trx"].unique()
+    matched_b = df_join["ref_trx"].unique()
+    
+    unmatched_a = dfa[~dfa["id_trx"].isin(matched_a)]
+    unmatched_b = dfb[~dfb["ref_trx"].isin(matched_b)]
+    
+    if len(unmatched_a) > 0:
+        print("\n⚠️  Transactions A non matchées:")
+        print(unmatched_a)
+    else:
+        print("\n✅ Toutes les transactions A ont été matchées")
+    
+    if len(unmatched_b) > 0:
+        print("\n⚠️  Transactions B non matchées:")
+        print(unmatched_b)
+    else:
+        print("\n✅ Toutes les transactions B ont été matchées")
+    
+    print("\n" + "=" * 80)
+    print("TEST COMPLÉTÉ ✅")
+    print("=" * 80)
+    
+    
+    
+#########
+df_join = join_transactions_by_minute_optimal(
+    dfa=dfa,
+    dfb=dfb,
+    dt_a="date_utc",
+    dt_b="date_casablanca",
+    montant_col="montant",
+    tz_a="UTC",
+    tz_b="Africa/Casablanca"  # ← Simplement ça !
+)
