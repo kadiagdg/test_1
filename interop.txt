@@ -1,0 +1,151 @@
+L’interopérabilité UEMOA, c’est la capacité des systèmes de paiement des pays de l’UEMOA 
+à communiquer entre eux, sans friction, quel que soit l’opérateur,la banque ou le pays.
+
+Le compte pivot est le compte central que chaque banque ouvre dans ses propres livres 
+spour centraliser toutes les opérations d'interopérabilité.
+
+Compte miroir = Position nette dans l'interopérabilité (créance ou dette envers les autres banques)
+	Le compte miroir montre la POSITION NETTE de la banque, qui peut être :
+	Négative (-50 millions) = la banque DOIT de l'argent aux autres
+	Positive (+30 millions) = les autres banques LUI DOIVENT de l'argent
+
+Compte de règlement = Liquidités réelles disponibles à la BCEAO 
+pour effectuer les paiements définitifs entre elles.
+
+La garantie de limite(limite de débit) est un montant que la banque dépose ou immobilise chez la BCEAO pour :
+couvrir ses engagements interbancaires, 
+éviter le risque de défaut pendant la journée;
+C'est une sécurité pour éviter qu'une banque n'envoie de l'argent qu'elle n'a pas.
+__ si elle depasse la garanie, les transactions seront en pendig ou rejected ?
+
+compensation calcul la position nette entre les banque pour effectuer les reglements
+
+La Régularisation des Comptes intervient lorsqu'il y a des écarts entre le compte pivot
+ (dans les livres de la banque) et le compte miroir (à la BCEAO).
+ Cela peut arriver en cas d'erreur technique ou de transaction rejetée.
+
+Régularisation nécessaire = Écart entre pivot et miroir (anomalie)
+Pas de régularisation = Différence entre miroir et règlement (normal jusqu'au TFJ)???
+
+exemple 
+ÉTAPE 1 - INITIATION (Matin)
+BANQUE A (Sénégal) - Côté ENVOI
+┌─────────────────────────────────────────┐
+│  BANQUE A - LIVRES COMPTABLES           │
+├─────────────────────────────────────────┤
+│                                         │
+│  Compte Mamadou (Actif)                │
+│  DÉBIT: 100 000 FCFA                   │
+│  Solde: diminue de 100 000             │
+│                                         │
+│  Compte PIVOT (Passif)                 │
+│  CRÉDIT: 100 000 FCFA                  │
+│  Solde: +100 000 FCFA                  │
+│  (= dette envers le système)           │
+│                                         │
+└─────────────────────────────────────────┘
+
+┌─────────────────────────────────────────┐
+│  À LA BCEAO                             │
+├─────────────────────────────────────────┤
+│                                         │
+│  Compte MIROIR de Banque A              │
+│  DÉBIT: 100 000 FCFA                   │
+│  Solde: -100 000 FCFA                  │
+│  (= position débitrice)                 │
+│                                         │
+│  Compte de RÈGLEMENT Banque A           │
+│  Aucun mouvement (encore)               │
+│  Solde: 500 000 000 FCFA               │
+│                                         │
+└─────────────────────────────────────────┘
+EXPLICATION :
+
+Compte pivot CRÉDIT = +100 000 (la banque a une dette)
+Compte miroir DÉBIT = -100 000 (position débitrice à la BCEAO)
+Les deux reflètent la même réalité : Banque A doit de l'argent
+
+
+ÉTAPE 2 - RÉCEPTION
+BANQUE B (Côte d'Ivoire) - Côté RÉCEPTION
+
+┌─────────────────────────────────────────┐
+│  BANQUE B - LIVRES COMPTABLES           │
+├─────────────────────────────────────────┤
+│                                         │
+│  Compte Aminata (Passif)               │
+│  CRÉDIT: 100 000 FCFA                  │
+│  Solde: augmente de 100 000            │
+│                                         │
+│  Compte PIVOT (Actif)                  │
+│  DÉBIT: 100 000 FCFA                   │
+│  Solde: -100 000 FCFA                  │
+│  (= créance sur le système)            │
+│                                         │
+└─────────────────────────────────────────┘
+
+┌─────────────────────────────────────────┐
+│  À LA BCEAO                             │
+├─────────────────────────────────────────┤
+│                                         │
+│  Compte MIROIR de Banque B              │
+│  CRÉDIT: 100 000 FCFA                  │
+│  Solde: +100 000 FCFA                  │
+│  (= position créditrice)                │
+│                                         │
+│  Compte de RÈGLEMENT Banque B           │
+│  Aucun mouvement (encore)               │
+│  Solde: 300 000 000 FCFA               │
+│                                         │
+└─────────────────────────────────────────┘
+
+EXPLICATION :
+
+Compte pivot DÉBIT = -100 000 (la banque a une créance)
+Compte miroir CRÉDIT = +100 000 (position créditrice à la BCEAO)
+Les deux reflètent la même réalité : On doit de l'argent à Banque B
+
+ÉTAPE 3 - FIN DE JOURNÉE (16h30)
+SITUATION APRÈS TOUTES LES OPÉRATIONS
+┌──────────────────────────────────────────────────┐
+│  RÉSUMÉ JOURNÉE COMPLÈTE                         │
+├──────────────────────────────────────────────────┤
+│                                                  │
+│  BANQUE A:                                       │
+│  • A envoyé au total: 50 millions               │
+│  • A reçu au total: 40 millions                 │
+│  • POSITION NETTE: -10 millions (débitrice)     │
+│                                                  │
+│  Compte pivot: +10 millions (passif/dette)      │
+│  Compte miroir: -10 millions (débit BCEAO)      │
+│  Compte règlement: 500 millions (inchangé)      │
+│                                                  │
+├──────────────────────────────────────────────────┤
+│                                                  │
+│  BANQUE B:                                       │
+│  • A envoyé au total: 40 millions               │
+│  • A reçu au total: 50 millions                 │
+│  • POSITION NETTE: +10 millions (créditrice)    │
+│                                                  │
+│  Compte pivot: -10 millions (actif/créance)     │
+│  Compte miroir: +10 millions (crédit BCEAO)     │
+│  Compte règlement: 300 millions (inchangé)      │
+│                                                  │
+└──────────────────────────────────────────────────┘
+
+
+
+Objectif :
+
+
+
+
+
+rapprocher
+
+voir ce qui manque
+gérer les régularisations
+suivre les écarts pivot / BCEAO
+suivre l’exposition (garantie)
+
+
