@@ -1,0 +1,940 @@
+"""
+RÉCONCILIATION bi bk - VERSION CORRIGÉE
+=============================================
+
+RÈGLE CORRECTE :
+    - Weekend (samedi/dimanche) → comptabilisé LUNDI ou MARDI
+      Les deux sont valides, on ne sait pas lequel à l'avance.
+      → Le script cherche une correspondance sur LUNDI ET MARDI.
+      → Si trouvé sur lundi : matched sur lundi
+      → Si trouvé sur mardi : matched sur mardi
+      → Si trouvé sur les deux : doublon à traiter
+    
+    - Jour férié en semaine → jour ouvré suivant (sans ambiguïté)
+    
+    - Jour ouvré normal → même date (sans décalage)
+
+STRATÉGIE :
+    Pour les weekends : générer 2 dates candidates (lundi ET mardi)
+    puis faire une jointure sur toutes les dates candidates.
+    C'est la même logique que la fenêtre J+N, mais ici ce sont
+    des dates précises (lundi ET mardi) et non un intervalle.
+
+Date: Février 2026
+"""
+
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+
+# ==============================================================================
+# CONFIGURATION : JOURS FÉRIÉS CÔTE D'IVOIRE 2026
+# ==============================================================================
+
+JOURS_FERIES_FIXES_2026 = [
+    '2026-01-01',  # Nouvel An
+    '2026-05-01',  # Fête du Travail
+    '2026-08-07',  # Fête de l'Indépendance
+    '2026-08-15',  # Assomption
+    '2026-11-01',  # Toussaint
+    '2026-11-15',  # Journée Nationale de la Paix
+    '2026-12-07',  # Fête de la République
+    '2026-12-25',  # Noël
+]
+
+JOURS_FERIES_MOBILES_2026 = [
+    '2026-04-06',  # Lundi de Pâques
+    '2026-05-14',  # Ascension
+    '2026-05-25',  # Lundi de Pentecôte
+    '2026-03-21',  # Aïd el-Fitr (estimation)
+    '2026-05-28',  # Aïd el-Adha (estimation)
+    '2026-08-08',  # Mawlid (estimation)
+]
+
+JOURS_FERIES_2026 = JOURS_FERIES_FIXES_2026 + JOURS_FERIES_MOBILES_2026
+
+
+# ==============================================================================
+# FONCTION 1 : CALCULER LES DATES CANDIDATES DE datec
+# ==============================================================================
+
+def calculer_dates_candidates(date, jours_feries=None):
+    """
+    Calcule la liste des dates candidates de datec pour une date.
+    
+    RÈGLE :
+    -------
+    - Jour ouvré (lundi→vendredi, non férié) → 1 seule date candidate : lui-même
+    - Weekend (samedi ou dimanche) → 2 dates candidates : lundi ET mardi
+      (l'une ou l'autre peut être la vraie date de datec)
+    - Jour férié en semaine → 1 seule date candidate : premier jour ouvré suivant
+    
+    GESTION DES CAS COMPLEXES :
+    ---------------------------
+    - Weekend + lundi férié → candidates : mardi ET mercredi
+      (car lundi est exclu, donc on prend mardi ET mercredi)
+    - Weekend + lundi ET mardi fériés → candidates : mercredi ET jeudi
+    
+    La logique est : trouver les 2 premiers jours ouvrés APRÈS le weekend.
+    
+    Args:
+        date: datetime, pd.Timestamp ou date
+        jours_feries: liste de dates fériées (strings 'YYYY-MM-DD')
+    
+    Returns:
+        list[pd.Timestamp] - liste des dates candidates (1 ou 2 dates)
+    
+    Exemple:
+        >>> # Samedi 07/02/2026
+        >>> dates = calculer_dates_candidates(datetime(2026, 2, 7), JOURS_FERIES_2026)
+        >>> print([str(d.date()) for d in dates])
+        # ['2026-02-09', '2026-02-10']  ← lundi ET mardi
+        
+        >>> # Lundi normal 09/02/2026
+        >>> dates = calculer_dates_candidates(datetime(2026, 2, 9), JOURS_FERIES_2026)
+        >>> print([str(d.date()) for d in dates])
+        # ['2026-02-09']  ← lui-même (1 seule date)
+        
+        >>> # Vendredi 01/05/2026 (Fête du Travail)
+        >>> dates = calculer_dates_candidates(datetime(2026, 5, 1), JOURS_FERIES_2026)
+        >>> print([str(d.date()) for d in dates])
+        # ['2026-05-04']  ← lundi suivant (1 seule date)
+        
+        >>> # Samedi 04/04/2026 (lundi 06/04 = Pâques)
+        >>> dates = calculer_dates_candidates(datetime(2026, 4, 4), JOURS_FERIES_2026)
+        >>> print([str(d.date()) for d in dates])
+        # ['2026-04-07', '2026-04-08']  ← mardi ET mercredi (lundi férié)
+    """
+    if jours_feries is None:
+        jours_feries = []
+    
+    # Convertir les fériés en set de dates (accès O(1))
+    jours_feries_dates = {pd.to_datetime(d).date() for d in jours_feries}
+    
+    # Normaliser la date
+    if isinstance(date, pd.Timestamp):
+        date = date.date()
+    elif isinstance(date, datetime):
+        date = date.date()
+    
+    is_weekend = date.weekday() in [5, 6]  # 5=samedi, 6=dimanche
+    is_ferie   = date in jours_feries_dates
+    
+    # -------------------------------------------------------------------------
+    # CAS 1 : WEEKEND → 2 dates candidates (1er et 2ème jour ouvré après weekend)
+    # -------------------------------------------------------------------------
+    if is_weekend:
+        # Trouver le lundi suivant
+        jours_avant_lundi = (7 - date.weekday()) % 7  # sam→2, dim→1
+        lundi = date + timedelta(days=jours_avant_lundi)
+        
+        # Trouver les 2 premiers jours ouvrés à partir du lundi
+        dates_candidates = []
+        current = lundi
+        
+        while len(dates_candidates) < 2:
+            is_w = current.weekday() in [5, 6]
+            is_f = current in jours_feries_dates
+            
+            if not is_w and not is_f:
+                # C'est un jour ouvré → candidat
+                dates_candidates.append(pd.Timestamp(current))
+            
+            current = current + timedelta(days=1)
+        
+        # Résultat : [lundi_ouvré, mardi_ouvré] (ou équivalent si fériés)
+        return dates_candidates
+    
+    # -------------------------------------------------------------------------
+    # CAS 2 : JOUR OUVRÉ NORMAL → 1 seule date candidate (lui-même)
+    # -------------------------------------------------------------------------
+    elif not is_ferie:
+        return [pd.Timestamp(date)]
+    
+    # -------------------------------------------------------------------------
+    # CAS 3 : JOUR FÉRIÉ EN SEMAINE → 1 seule date candidate (1er jour ouvré suivant)
+    # -------------------------------------------------------------------------
+    else:
+        current = date + timedelta(days=1)
+        
+        while True:
+            is_w = current.weekday() in [5, 6]
+            is_f = current in jours_feries_dates
+            
+            if not is_w and not is_f:
+                return [pd.Timestamp(current)]
+            
+            current = current + timedelta(days=1)
+
+
+# ==============================================================================
+# FONCTION 2 : ÉTENDRE LE DATAFRAME AVEC LES DATES CANDIDATES
+# ==============================================================================
+
+def etendre_dates_candidates(df, colonne_date, jours_feries=None, label='ssss'):
+    """
+    Étend le DataFrame en créant une ligne par date candidate de datec.
+    
+    LOGIQUE :
+    ---------
+    - transmission lundi ouvré → 1 ligne (date_candidate = lundi)
+    - transmission samedi → 2 lignes (date_candidate = lundi, date_candidate = mardi)
+    - transmission férié → 1 ligne (date_candidate = 1er jour ouvré suivant)
+    
+    Ceci permet ensuite de faire une jointure simple sur 'DATE_datec'.
+    
+    Args:
+        df: DataFrame source
+        colonne_date: nom de la colonne de date de transmission
+        jours_feries: liste des jours fériés
+        label: label pour les messages de log
+    
+    Returns:
+        DataFrame étendu avec colonne 'DATE_datec' et 'NB_CANDIDATS'
+    
+    Performance : Opération vectorisée, rapide même pour millions de lignes
+    
+    Exemple:
+        >>> df = pd.DataFrame({
+        ...     'code': ['CLI001', 'CLI002', 'CLI003'],
+        ...     'DATE transmission': ['2026-02-07',  # samedi → 2 candidats
+        ...                          '2026-02-09',  # lundi  → 1 candidat
+        ...                          '2026-05-01'], # férié  → 1 candidat
+        ...     'MONTANT': [100, 200, 300]
+        ... })
+        >>> df_etendu = etendre_dates_candidates(df, 'DATE transmission')
+        >>> print(df_etendu[['code', 'DATE transmission', 'DATE_datec']])
+        #   code  DATE transmission  DATE_datec
+        # 0 CLI001       2026-02-07            2026-02-09  ← lundi (candidat 1/2)
+        # 1 CLI001       2026-02-07            2026-02-10  ← mardi (candidat 2/2)
+        # 2 CLI002       2026-02-09            2026-02-09  ← lui-même
+        # 3 CLI003       2026-05-01            2026-05-04  ← lundi ouvré suivant
+    """
+    if jours_feries is None:
+        jours_feries = JOURS_FERIES_2026
+    
+    df = df.copy()
+    df[colonne_date] = pd.to_datetime(df[colonne_date])
+    
+    print(f"   🗓️  [{label}] Calcul des dates candidates (weekend → lundi ET mardi)...")
+    
+    # Ajouter un ID unique pour garder trace des lignes originales
+    df['_id_ligne_orig'] = range(len(df))
+    
+    # Calculer les dates candidates pour chaque ligne
+    # Résultat : liste de listes [[date1], [date1, date2], [date1], ...]
+    listes_candidates = df[colonne_date].apply(
+        lambda x: calculer_dates_candidates(x, jours_feries)
+    )
+    
+    # Compter le nombre de candidats par ligne (pour info)
+    df['NB_CANDIDATS'] = listes_candidates.apply(len)
+    
+    # Statistiques
+    nb_weekends  = (df['NB_CANDIDATS'] == 2).sum()
+    nb_normaux   = (df['NB_CANDIDATS'] == 1).sum()
+    
+    print(f"      → {nb_weekends:,} transmissions weekend (2 dates candidates chacune)")
+    print(f"      → {nb_normaux:,} transmissions normales (1 date candidate)")
+    
+    # Exploser les listes de candidats en lignes individuelles
+    # → Chaque weekend devient 2 lignes, les autres restent 1 ligne
+    df['DATE_datec'] = listes_candidates
+    df_etendu = df.explode('DATE_datec').reset_index(drop=True)
+    df_etendu['DATE_datec'] = pd.to_datetime(df_etendu['DATE_datec'])
+    
+    # Calculer l'écart en jours pour info
+    df_etendu['JOURS_DECALAGE'] = (
+        df_etendu['DATE_datec'] - df_etendu[colonne_date]
+    ).dt.days
+    
+    print(f"      → DataFrame étendu : {len(df):,} → {len(df_etendu):,} lignes")
+    
+    return df_etendu
+
+
+# ==============================================================================
+# FONCTION 3 : JOINTURE AVEC GESTION DES DOUBLONS (inchangée)
+# ==============================================================================
+
+def joindre_avec_gestion_doublons(df_gauche, df_droite, colonnes_jointure,
+                                   suffixes=('_dfu', '_dfc')):
+    """
+    Effectue une jointure et sépare matched (1:1) et doublons (1:N).
+    
+    STRATÉGIE :
+    1. Jointure sur les colonnes de jointure
+    2. Numéroter les correspondances par ligne originale gauche
+    3. rang=1 → matched, rang>1 → doublon
+    
+    Args:
+        df_gauche: DataFrame gauche (étendu avec dates candidates)
+        df_droite: DataFrame droite (étendu avec dates candidates)
+        colonnes_jointure: colonnes pour la jointure
+        suffixes: suffixes pour colonnes en doublon
+    
+    Returns:
+        Tuple (df_matched, df_doublons)
+    
+    Exemple:
+        >>> # 1 ligne ssss + 2 lignes bbbb pour même client
+        >>> matched, doublons = joindre_avec_gestion_doublons(df_ssss, df_bbbb, colonnes)
+        >>> # matched : 1 ligne (rang 1)
+        >>> # doublons : 1 ligne (rang 2)
+    """
+    print(f"   🔗 Jointure sur : {colonnes_jointure}")
+    
+    # ID unique sur la ligne originale gauche pour tracer les doublons
+    df_gauche = df_gauche.copy()
+    df_gauche['_id_gauche_temp'] = range(len(df_gauche))
+    
+    df_joint = pd.merge(
+        df_gauche,
+        df_droite,
+        on=colonnes_jointure,
+        how='inner',
+        suffixes=suffixes
+    )
+    
+    print(f"      → {len(df_joint):,} correspondances brutes trouvées")
+    
+    if len(df_joint) == 0:
+        return pd.DataFrame(), pd.DataFrame()
+    
+    # DÉDUPLICATION SUR LA LIGNE ORIGINALE
+    # =====================================
+    # Un weekend ssss génère 2 lignes (lundi et mardi).
+    # Si les deux matchent (bbbb a lundi ET mardi), on garde
+    # UN SEUL match par ligne ssss originale → rang sur _id_ligne_orig
+    #
+    # _id_ligne_orig_dfu = ID de la ligne ssss d'origine (avant extension dates)
+    # Si présent dans le résultat joint (suffixe _dfu), on groupe dessus.
+    # Sinon on groupe sur _id_gauche_temp.
+    
+    if '_id_ligne_orig_dfu' in df_joint.columns:
+        id_col = '_id_ligne_orig_dfu'
+    elif '_id_ligne_orig' in df_joint.columns:
+        id_col = '_id_ligne_orig'
+    else:
+        id_col = '_id_gauche_temp'
+    
+    # Numéroter par ligne ssss ORIGINALE (pas par ligne étendue)
+    df_joint['_rang'] = df_joint.groupby(id_col).cumcount() + 1
+    
+    nb_doublons_1n = (df_joint.groupby(id_col).size() > 1).sum()
+    
+    if nb_doublons_1n > 0:
+        print(f"      ⚠️  {nb_doublons_1n:,} lignes ssss avec plusieurs correspondances (doublons)")
+    
+    # Séparer matched (rang=1) et doublons (rang>1)
+    df_matched  = df_joint[df_joint['_rang'] == 1].copy()
+    df_doublons = df_joint[df_joint['_rang'] > 1].copy()
+    
+    print(f"      → Matched (rang 1)  : {len(df_matched):,}")
+    print(f"      → Doublons (rang >1): {len(df_doublons):,}")
+    
+    # Nettoyer colonnes temporaires
+    cols_temp = ['_id_gauche_temp', '_rang', '_id_ligne_orig', 'NB_CANDIDATS']
+    for col in cols_temp:
+        for df_ in [df_matched, df_doublons]:
+            if col in df_.columns:
+                df_.drop(columns=[col], inplace=True)
+    
+    return df_matched, df_doublons
+
+
+# ==============================================================================
+# FONCTION PRINCIPALE : RÉCONCILIATION COMPLÈTE
+# ==============================================================================
+
+def reconcilier_ssssconnect_bbbb(df_ssssconnect, df_bbbb,
+                                 colonnes_jointure=['code', 'DATE_datec', 'sens', 'MONTANT'],
+                                 jours_feries=None):
+    """
+    Réconciliation complète ssss Connect ↔ bbbb.
+    
+    RÈGLE WEEKEND APPLIQUÉE :
+    -------------------------
+    Weekend → cherche sur LUNDI et MARDI (les deux sont valides)
+    Ferié → cherche sur le 1er jour ouvré suivant uniquement
+    Jour ouvré normal → même date, pas de décalage
+    
+    WORKFLOW :
+    ----------
+    1. Filtrer les ACCEPTED
+    2. Étendre les dates (weekend → 2 lignes candidates)
+    3. Jointure sur DATE_datec + autres colonnes
+    4. Séparer matched / doublons / unmatched
+    
+    Args:
+        df_ssssconnect: DataFrame ssss Connect (tran_tot)
+        df_bbbb: DataFrame bbbb (codeclient)
+        colonnes_jointure: colonnes pour la jointure (inclure DATE_datec)
+        jours_feries: liste des jours fériés (défaut: JOURS_FERIES_2026)
+    
+    Returns:
+        dict avec df_matched, df_doublons, df_unmatched_ssss, df_unmatched_bbbb, statistiques
+    
+    Exemple d'utilisation:
+        >>> resultats = reconcilier_ssssconnect_bbbb(tran_tot, codeclient)
+        >>> print(f"Matched : {len(resultats['df_matched']):,}")
+        >>> print(f"Taux    : {resultats['statistiques']['taux_reconciliation']:.1f}%")
+    """
+    if jours_feries is None:
+        jours_feries = JOURS_FERIES_2026
+    
+    print("="*70)
+    print("RÉCONCILIATION ssss CONNECT - bbbb")
+    print("="*70)
+    print(f"📋 Règle weekend : comptabilisé LUNDI ou MARDI (les 2 valides)")
+    print(f"📊 Volume initial : ssss={len(df_ssssconnect):,} | bbbb={len(df_bbbb):,}")
+    
+    # -------------------------------------------------------------------------
+    # ÉTAPE 1 : FILTRER LES ACCEPTED
+    # -------------------------------------------------------------------------
+    print(f"\n1️⃣ Filtrage des transmissions ACCEPTED...")
+    
+    df_ssss_accepted = df_ssssconnect[
+        (df_ssssconnect['STATUT ssss']   == 'ACCEPTED') &
+        (df_ssssconnect['STATUT bbbb'] == 'ACCEPTED')
+    ].copy()
+    
+    df_bbbb_accepted = df_bbbb[
+        df_bbbb['STATUT ssss'] == 'ACCEPTED'
+    ].copy()
+    
+    print(f"   ✅ ssss accepted    : {len(df_ssss_accepted):,}")
+    print(f"   ✅ bbbb accepted : {len(df_bbbb_accepted):,}")
+    
+    # -------------------------------------------------------------------------
+    # ÉTAPE 2 : RENOMMER COLONNES bbbb POUR CORRESPONDRE À ssss
+    # -------------------------------------------------------------------------
+    print(f"\n2️⃣ Préparation des colonnes...")
+    
+    df_bbbb_prep = df_bbbb_accepted.rename(columns={
+        'code': 'code',
+        'dc': 'DATE transmission',
+        'sens': 'sens',
+        'mon': 'MONTANT'
+    })
+    
+    # -------------------------------------------------------------------------
+    # ÉTAPE 3 : ÉTENDRE AVEC LES DATES CANDIDATES
+    # Chaque weekend → 2 lignes (lundi ET mardi)
+    # Chaque jour ouvré → 1 ligne (lui-même)
+    # Chaque férié → 1 ligne (1er jour ouvré suivant)
+    # -------------------------------------------------------------------------
+    print(f"\n3️⃣ Calcul des dates de datec candidates...")
+    
+    df_ssss_etendu = etendre_dates_candidates(
+        df_ssss_accepted,
+        colonne_date='DATE transmission',
+        jours_feries=jours_feries,
+        label='ssss'
+    )
+    
+    df_bbbb_etendu = etendre_dates_candidates(
+        df_bbbb_prep,
+        colonne_date='DATE transmission',
+        jours_feries=jours_feries,
+        label='bbbb'
+    )
+    
+    # -------------------------------------------------------------------------
+    # ÉTAPE 4 : JOINTURE SUR DATE_datec + AUTRES COLONNES
+    # -------------------------------------------------------------------------
+    print(f"\n4️⃣ Jointure et gestion des doublons...")
+    
+    df_matched, df_doublons = joindre_avec_gestion_doublons(
+        df_ssss_etendu,
+        df_bbbb_etendu,
+        colonnes_jointure=colonnes_jointure,
+        suffixes=('_dfu', '_dfc')
+    )
+    
+    # -------------------------------------------------------------------------
+    # ÉTAPE 5 : IDENTIFIER LES UNMATCHED
+    # -------------------------------------------------------------------------
+    print(f"\n5️⃣ Identification des transmissions non réconciliées...")
+    
+    if len(df_matched) > 0 and '_id_ligne_orig' in df_ssss_etendu.columns:
+        # IDs originaux qui ont matché
+        ids_ssss_matched = set(df_matched.get('_id_ligne_orig_dfu',
+                             df_matched.get('_id_ligne_orig', pd.Series())).dropna())
+    else:
+        ids_ssss_matched = set()
+    
+    # ssss unmatched : lignes originales ssss qui n'ont pas matché
+    df_ssss_accepted_idx = df_ssss_accepted.copy()
+    df_ssss_accepted_idx['_id_orig'] = range(len(df_ssss_accepted))
+    df_unmatched_ssss = df_ssss_accepted_idx[
+        ~df_ssss_accepted_idx['_id_orig'].isin(ids_ssss_matched)
+    ].drop(columns=['_id_orig'])
+    
+    # bbbb unmatched
+    if len(df_matched) > 0:
+        cles_matchees = df_matched[colonnes_jointure].drop_duplicates()
+        df_unmatched_bbbb = df_bbbb_etendu.merge(
+            cles_matchees, on=colonnes_jointure, how='left', indicator=True
+        )
+        df_unmatched_bbbb = df_unmatched_bbbb[
+            df_unmatched_bbbb['_merge'] == 'left_only'
+        ].drop(columns=['_merge'])
+        # Dédupliquer (un weekend a 2 lignes, on ne compte qu'une fois)
+        df_unmatched_bbbb = df_unmatched_bbbb.drop_duplicates(
+            subset=['code', 'DATE transmission', 'sens', 'MONTANT']
+        )
+    else:
+        df_unmatched_bbbb = df_bbbb_prep
+    
+    print(f"   ⚠️  Unmatched ssss    : {len(df_unmatched_ssss):,}")
+    print(f"   ⚠️  Unmatched bbbb : {len(df_unmatched_bbbb):,}")
+    
+    # -------------------------------------------------------------------------
+    # ÉTAPE 6 : STATISTIQUES
+    # -------------------------------------------------------------------------
+    total_ssss    = len(df_ssss_accepted)
+    nb_matched  = len(df_matched)
+    taux_recon  = (nb_matched / total_ssss * 100) if total_ssss > 0 else 0
+    
+    statistiques = {
+        'total_ssss_accepted'   : total_ssss,
+        'total_bbbb_accepted': len(df_bbbb_accepted),
+        'matched'             : nb_matched,
+        'doublons'            : len(df_doublons),
+        'unmatched_ssss'        : len(df_unmatched_ssss),
+        'unmatched_bbbb'     : len(df_unmatched_bbbb),
+        'taux_reconciliation' : taux_recon,
+    }
+    
+    print(f"\n{'='*70}")
+    print(f"📊 RÉSUMÉ")
+    print(f"{'='*70}")
+    print(f"✅ Taux de réconciliation : {taux_recon:.1f}%")
+    print(f"   • Matched         : {nb_matched:,}")
+    print(f"   • Doublons (1:N)  : {len(df_doublons):,}")
+    print(f"   • Unmatched ssss    : {len(df_unmatched_ssss):,}")
+    print(f"   • Unmatched bbbb : {len(df_unmatched_bbbb):,}")
+    print(f"{'='*70}")
+    
+    return {
+        'df_matched'       : df_matched,
+        'df_doublons'      : df_doublons,
+        'df_unmatched_ssss'  : df_unmatched_ssss,
+        'df_unmatched_bbbb': df_unmatched_bbbb,
+        'statistiques'     : statistiques,
+    }
+
+
+# ==============================================================================
+# TESTS
+# ==============================================================================
+
+if __name__ == "__main__":
+    print("\n" + "="*70)
+    print("🧪 TEST : WEEKEND → LUNDI OU MARDI (les 2 valides)")
+    print("="*70)
+    
+    # Vérifier la logique de dates candidates
+    print("\n📅 TEST calculer_dates_candidates() :")
+    print("-"*50)
+    
+    cas_tests = [
+        ("Samedi  07/02/2026", datetime(2026, 2,  7)),
+        ("Dimanche 08/02/2026", datetime(2026, 2,  8)),
+        ("Lundi   09/02/2026", datetime(2026, 2,  9)),
+        ("Vendredi 01/05/2026 (Fête Travail)", datetime(2026, 5,  1)),
+        ("Samedi  04/04/2026 (lundi=Pâques)", datetime(2026, 4,  4)),
+        ("Samedi  07/08/2026 (lundi=Indép.)", datetime(2026, 8,  7)),
+    ]
+    
+    for nom, date in cas_tests:
+        candidates = calculer_dates_candidates(date, JOURS_FERIES_2026)
+        jours = [c.strftime('%A %d/%m/%Y') for c in candidates]
+        print(f"\n  {nom}")
+        for j in jours:
+            print(f"    → {j}")
+    
+    # Test réconciliation complète
+    print("\n\n" + "="*70)
+    print("🧪 TEST RÉCONCILIATION COMPLÈTE")
+    print("="*70)
+    
+    # ssss Connect : transmissions faites le weekend
+    df_ssss = pd.DataFrame({
+        'code'          : ['CLI001', 'CLI002', 'CLI003', 'CLI004', 'CLI005'],
+        'DATE transmission': [
+            '2026-02-07',  # Samedi → candidats : lundi 09, mardi 10
+            '2026-02-08',  # Dimanche → candidats : lundi 09, mardi 10
+            '2026-02-09',  # Lundi → candidat : lundi 09 seulement
+            '2026-05-01',  # Vendredi férié → candidat : lundi 04/05
+            '2026-04-04',  # Samedi + lundi Pâques → candidats : mardi 07, mercredi 08
+        ],
+        'sens'   : ['DEBIT', 'CREDIT', 'DEBIT', 'CREDIT', 'DEBIT'],
+        'MONTANT': [100000, 50000, 75000, 120000, 80000],
+        'STATUT ssss'   : ['ACCEPTED'] * 5,
+        'STATUT bbbb': ['ACCEPTED'] * 5,
+    })
+    
+    # bbbb : certaines comptabilisées lundi, certaines mardi
+    df_bbbb = pd.DataFrame({
+        'code'   : ['CLI001', 'CLI001', 'CLI002', 'CLI003', 'CLI004', 'CLI005', 'CLI006'],
+        'dc'   : [
+            '2026-02-09',  # CLI001 comptabilisé LUNDI (1er candidat)
+            '2026-02-10',  # CLI001 comptabilisé MARDI (2ème candidat = doublon !)
+            '2026-02-10',  # CLI002 comptabilisé MARDI (2ème candidat)
+            '2026-02-09',  # CLI003 comptabilisé LUNDI (son seul candidat)
+            '2026-05-04',  # CLI004 comptabilisé LUNDI (1er jour ouvré après férié)
+            '2026-04-07',  # CLI005 comptabilisé MARDI (lundi Pâques = férié)
+            '2026-02-09',  # CLI006 n'existe pas dans ssss → unmatched bbbb
+        ],
+        'sens': ['DEBIT', 'DEBIT', 'CREDIT', 'DEBIT', 'CREDIT', 'DEBIT', 'CREDIT'],
+        'mon': [100000, 100000, 50000, 75000, 120000, 80000, 30000],
+        'STATUT ssss': ['ACCEPTED'] * 7,
+    })
+    
+    print(f"\n📊 Données de test :")
+    print(f"   • ssss Connect : {len(df_ssss)} lignes")
+    print(f"   • bbbb      : {len(df_bbbb)} lignes")
+    print(f"\nCas testés :")
+    print(f"   • CLI001 : samedi → bbbb a lundi ET mardi (→ doublon)")
+    print(f"   • CLI002 : dimanche → bbbb a mardi (→ matched)")
+    print(f"   • CLI003 : lundi normal → bbbb a lundi (→ matched)")
+    print(f"   • CLI004 : vendredi férié → bbbb a lundi ouvré suivant (→ matched)")
+    print(f"   • CLI005 : samedi + lundi Pâques → bbbb a mardi (→ matched)")
+    print(f"   • CLI006 : n'existe pas dans ssss → unmatched bbbb")
+    
+    # Exécuter réconciliation
+    resultats = reconcilier_ssssconnect_bbbb(
+        df_ssss,
+        df_bbbb,
+        colonnes_jointure=['code', 'DATE_datec', 'sens', 'MONTANT'],
+        jours_feries=JOURS_FERIES_2026
+    )
+    
+    # Afficher résultats détaillés
+    print("\n\n" + "="*70)
+    print("📋 RÉSULTATS DÉTAILLÉS")
+    print("="*70)
+    
+    print("\n✅ MATCHED :")
+    if len(resultats['df_matched']) > 0:
+        cols = ['code', 'DATE transmission', 'DATE_datec', 'MONTANT', 'JOURS_DECALAGE']
+        cols_dispo = [c for c in cols if c in resultats['df_matched'].columns]
+        print(resultats['df_matched'][cols_dispo].to_string(index=False))
+    
+    print("\n⚠️  DOUBLONS (1 ligne ssss matchée sur lundi ET mardi) :")
+    if len(resultats['df_doublons']) > 0:
+        cols = ['code', 'DATE transmission', 'DATE_datec', 'MONTANT']
+        cols_dispo = [c for c in cols if c in resultats['df_doublons'].columns]
+        print(resultats['df_doublons'][cols_dispo].to_string(index=False))
+    else:
+        print("   Aucun")
+    
+    print("\n⚠️  UNMATCHED ssss :")
+    if len(resultats['df_unmatched_ssss']) > 0:
+        print(resultats['df_unmatched_ssss'][['code', 'DATE transmission', 'MONTANT']].to_string(index=False))
+    else:
+        print("   Aucun")
+    
+    print("\n⚠️  UNMATCHED bbbb :")
+    if len(resultats['df_unmatched_bbbb']) > 0:
+        cols = ['code', 'DATE transmission', 'MONTANT']
+        cols_dispo = [c for c in cols if c in resultats['df_unmatched_bbbb'].columns]
+        print(resultats['df_unmatched_bbbb'][cols_dispo].to_string(index=False))
+    else:
+        print("   Aucun")
+    
+    print("\n" + "="*70)
+    print("✅ TESTS TERMINÉS")
+    print("="*70)
+    print("""
+💡 UTILISATION EN PRODUCTION :
+
+    from reconciliation_bi_bk_lundi_ou_mardi import (
+        reconcilier_ssssconnect_bbbb,
+        JOURS_FERIES_2026
+    )
+    
+    tran_tot   = pd.read_csv('ssssconnect.csv', dtype={'code': str})
+    codeclient = pd.read_csv('bbbb.csv',     dtype={'code': str})
+    
+    resultats = reconcilier_ssssconnect_bbbb(tran_tot, codeclient)
+    
+    resultats['df_matched'].to_csv('matched.csv', index=False)
+    resultats['df_doublons'].to_csv('doublons.csv', index=False)
+    """)
+____________________________
+
+
+"""
+GESTION DES DOUBLONS - SCRIPT OPTIMISÉ
+=======================================
+
+PROBLÈME :
+    pd.merge() entre df_accepted0 et codeclient peut créer des doublons.
+    Exemple :
+        df_accepted0 : 1 ligne CLI001
+        codeclient   : 3 lignes CLI001 (même client, même date, même montant)
+        → pd.merge() crée 3 lignes CLI001 dans le résultat
+
+    On veut :
+        df_matched  : 1 ligne CLI001 (le premier match)
+        df_doublons : 2 lignes CLI001 (les doublons)
+
+STRATÉGIE :
+    1. Ajouter un ID unique à chaque ligne de df_accepted0 AVANT le merge
+    2. Faire le merge normalement
+    3. Numéroter les correspondances par ID (rang 1, 2, 3...)
+    4. rang=1  → matched  (une ligne ss = une ligne bbbb)
+    5. rang>1  → doublon  (une ligne ss = plusieurs lignes bbbb)
+    6. ID absent du résultat → unmatched
+
+"""
+
+import pandas as pd
+
+
+# ==============================================================================
+# FONCTION PRINCIPALE : MERGE AVEC GESTION DES DOUBLONS
+# ==============================================================================
+
+def merge_avec_doublons(df_gauche, df_droite,
+                        left_on, right_on,
+                        suffixes=('_dfu', '_dfc')):
+    """
+    Effectue un merge pandas et sépare proprement :
+        - df_matched  : chaque ligne gauche matchée une seule fois (rang 1)
+        - df_doublons : lignes gauche matchées plusieurs fois (rang > 1)
+        - df_unmatched_gauche : lignes gauche sans aucun match
+        - df_unmatched_droite : lignes droite sans aucun match
+
+    RÈGLE DOUBLON :
+        Si une ligne de df_gauche correspond à N lignes de df_droite :
+          → rang 1 = matched
+          → rang 2, 3, ..., N = doublons
+
+    Args:
+        df_gauche : DataFrame gauche  (ex: df_accepted0)
+        df_droite : DataFrame droite  (ex: codeclient)
+        left_on   : liste des colonnes de jointure côté gauche
+        right_on  : liste des colonnes de jointure côté droite
+        suffixes  : suffixes pour colonnes en doublon de nom
+
+    Returns:
+        dict avec les clés :
+            'matched'           → DataFrame (lignes 1:1)
+            'doublons'          → DataFrame (lignes 1:N, rang > 1)
+            'unmatched_gauche'  → DataFrame (pas de match dans droite)
+            'unmatched_droite'  → DataFrame (pas de match dans gauche)
+
+    Exemple:
+        >>> resultats = merge_avec_doublons(
+        ...     df_accepted0, codeclient,
+        ...     left_on  = ['code ID', 'DATE transmission', 'sens', 'MONTANT'],
+        ...     right_on = ['code',  'date',            'sens', 'mon'],
+        ...     suffixes = ('_dfu', '_dfc')
+        ... )
+        >>> df_matched          = resultats['matched']
+        >>> df_doublons         = resultats['doublons']
+        >>> df_unmatched_ss     = resultats['unmatched_gauche']
+        >>> df_unmatched_bbbb  = resultats['unmatched_droite']
+    """
+
+    # ------------------------------------------------------------------
+    # ÉTAPE 1 : Ajouter un ID unique à chaque ligne des deux côtés
+    # ------------------------------------------------------------------
+    # Pourquoi ?
+    #   Sans ID, après le merge, on ne peut pas savoir quelle ligne
+    #   de df_gauche correspond à quelle ligne de df_droite.
+    #   L'ID nous permet de :
+    #     - Compter combien de fois chaque ligne gauche apparaît (doublons)
+    #     - Retrouver les lignes qui n'ont PAS matché (unmatched)
+
+    df_g = df_gauche.copy()
+    df_d = df_droite.copy()
+
+    df_g['_id_g'] = range(len(df_g))  # 0, 1, 2, ... len(gauche)-1
+    df_d['_id_d'] = range(len(df_d))  # 0, 1, 2, ... len(droite)-1
+
+    # ------------------------------------------------------------------
+    # ÉTAPE 2 : Merge INNER (uniquement les lignes qui matchent des 2 côtés)
+    # ------------------------------------------------------------------
+    df_merge = pd.merge(
+        df_g,
+        df_d,
+        left_on=left_on,
+        right_on=right_on,
+        how='inner',
+        suffixes=suffixes
+    )
+
+    # ------------------------------------------------------------------
+    # ÉTAPE 3 : Numéroter les correspondances PAR LIGNE GAUCHE ORIGINALE
+    # ------------------------------------------------------------------
+    # groupby('_id_g') groupe toutes les lignes du merge qui viennent
+    # de la même ligne gauche originale.
+    # cumcount() donne 0, 1, 2... → +1 pour avoir 1, 2, 3...
+    #
+    # Exemple :
+    #   CLI001 (id_g=0) apparaît 3 fois dans df_merge :
+    #     → rang 1 : CLI001 avec bbbb ligne A  ← matched
+    #     → rang 2 : CLI001 avec bbbb ligne B  ← doublon
+    #     → rang 3 : CLI001 avec bbbb ligne C  ← doublon
+
+    if len(df_merge) > 0:
+        df_merge['_rang'] = df_merge.groupby('_id_g').cumcount() + 1
+    else:
+        df_merge['_rang'] = []
+
+    # ------------------------------------------------------------------
+    # ÉTAPE 4 : Séparer matched (rang=1) et doublons (rang>1)
+    # ------------------------------------------------------------------
+    df_matched  = df_merge[df_merge['_rang'] == 1].copy()
+    df_doublons = df_merge[df_merge['_rang']  > 1].copy()
+
+    # ------------------------------------------------------------------
+    # ÉTAPE 5 : Trouver les unmatched (lignes sans aucun match)
+    # ------------------------------------------------------------------
+    # IDs des lignes gauche qui ont matché (au moins rang 1)
+    ids_g_matched = set(df_matched['_id_g'])
+
+    # IDs des lignes droite qui ont matché
+    ids_d_matched = set(df_matched['_id_d']) | set(df_doublons['_id_d'])
+
+    # Lignes gauche sans aucun match
+    df_unmatched_gauche = df_gauche[~df_g['_id_g'].isin(ids_g_matched)].copy()
+
+    # Lignes droite sans aucun match
+    df_unmatched_droite = df_droite[~df_d['_id_d'].isin(ids_d_matched)].copy()
+
+    # ------------------------------------------------------------------
+    # ÉTAPE 6 : Nettoyer les colonnes temporaires
+    # ------------------------------------------------------------------
+    for col in ['_id_g', '_id_d', '_rang']:
+        for df_ in [df_matched, df_doublons]:
+            if col in df_.columns:
+                df_.drop(columns=[col], inplace=True)
+
+    return {
+        'matched'          : df_matched,
+        'doublons'         : df_doublons,
+        'unmatched_gauche' : df_unmatched_gauche,
+        'unmatched_droite' : df_unmatched_droite,
+    }
+
+
+# ==============================================================================
+# TEST
+# ==============================================================================
+
+if __name__ == '__main__':
+
+    print("=" * 60)
+    print("TEST : GESTION DES DOUBLONS")
+    print("=" * 60)
+
+    # --------------------------------------------------------------------------
+    # Données de test
+    # --------------------------------------------------------------------------
+    df_ss = pd.DataFrame({
+        
+    })
+
+    df_bbbb = pd.DataFrame({
+        
+    })
+
+    print("\ndf_ss (gauche) :")
+    print(df_ss.to_string(index=False))
+    print(f"\ndf_bbbb (droite) :")
+    print(df_bbbb.to_string(index=False))
+    print(f"\n→ CLI001 est en doublon dans df_bbbb (2 lignes identiques)")
+    print(f"→ CLI004 n'est pas dans df_bbbb   (unmatched gauche)")
+    print(f"→ CLI005 n'est pas dans df_ss       (unmatched droite)")
+
+    # --------------------------------------------------------------------------
+    # Appel de la fonction
+    # --------------------------------------------------------------------------
+    resultats = merge_avec_doublons(
+        df_gauche = df_ss,
+        df_droite = df_bbbb,
+        left_on   = ['code ID',],
+        right_on  = ['code',  '],
+        suffixes  = ('_dfu', '_dfc'),
+    )
+
+    df_matched         = resultats['matched']
+    df_doublons        = resultats['doublons']
+    df_unmatched_ss    = resultats['unmatched_gauche']
+    df_unmatched_bbbb = resultats['unmatched_droite']
+
+    # --------------------------------------------------------------------------
+    # Affichage des résultats
+    # --------------------------------------------------------------------------
+    print("\n" + "=" * 60)
+    print("RÉSULTATS")
+    print("=" * 60)
+
+    print(f"\n✅ MATCHED ({len(df_matched)} ligne(s)) :")
+    print("   Une ligne ss  ↔  une ligne bbbb")
+    print(df_matched[['code ID', 'DATE transmission', 'MONTANT']].to_string(index=False))
+
+    print(f"\n⚠️  DOUBLONS ({len(df_doublons)} ligne(s)) :")
+    print("   Une ligne ss  ↔  plusieurs lignes bbbb (rang > 1)")
+    if len(df_doublons) > 0:
+        print(df_doublons[['code ID', 'DATE transmission', 'MONTANT']].to_string(index=False))
+    else:
+        print("   Aucun")
+
+    print(f"\n⚠️  UNMATCHED ss ({len(df_unmatched_ss)} ligne(s)) :")
+    print("   Dans ss mais pas dans bbbb")
+    if len(df_unmatched_ss) > 0:
+        print(df_unmatched_ss[['code ID', 'DATE transmission', 'MONTANT']].to_string(index=False))
+    else:
+        print("   Aucun")
+
+    print(f"\n⚠️  UNMATCHED bbbb ({len(df_unmatched_bbbb)} ligne(s)) :")
+    print("   Dans bbbb mais pas dans ss")
+    if len(df_unmatched_bbbb) > 0:
+        print(df_unmatched_bbbb[['code', 'date', 'mon']].to_string(index=False))
+    else:
+        print("   Aucun")
+
+    # --------------------------------------------------------------------------
+    # Vérification des totaux
+    # --------------------------------------------------------------------------
+    print("\n" + "=" * 60)
+    print("VÉRIFICATION")
+    print("=" * 60)
+    print(f"  ss total     : {len(df_ss)}")
+    print(f"  = matched    : {len(df_matched)}")
+    print(f"  + unmatched  : {len(df_unmatched_ss)}")
+    print(f"  = {len(df_matched) + len(df_unmatched_ss)} ✅" if len(df_matched) + len(df_unmatched_ss) == len(df_ss) else "  ≠ ERREUR ❌")
+
+    print(f"\n  bbbb total  : {len(df_bbbb)}")
+    print(f"  = matched    : {len(df_matched)}")
+    print(f"  + doublons   : {len(df_doublons)}")
+    print(f"  + unmatched  : {len(df_unmatched_bbbb)}")
+    total_bbbb = len(df_matched) + len(df_doublons) + len(df_unmatched_bbbb)
+    print(f"  = {total_bbbb} ✅" if total_bbbb == len(df_bbbb) else f"  = {total_bbbb} ≠ ERREUR ❌")
+
+    print("\n" + "=" * 60)
+    print("💡 UTILISATION DANS VOTRE CODE :")
+    print("=" * 60)
+    print("""
+    from gestion_doublons import merge_avec_doublons
+
+    resultats = merge_avec_doublons(
+        df_gauche = df_accepted0,
+        df_droite = codeclient,
+        left_on   = ['code ID', 'DATE transmission', 'sens', 'MONTANT'],
+        right_on  = ['code',  'date',            'sens', 'mon'],
+        suffixes  = ('_dfu', '_dfc'),
+    )
+
+    df_matched         = resultats['matched']
+    df_doublons        = resultats['doublons']
+    df_unmatched_ss    = resultats['unmatched_gauche']
+    df_unmatched_bbbb = resultats['unmatched_droite']
+    """)
