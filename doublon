@@ -1,0 +1,827 @@
+"""
+GESTION DES DOUBLONS - SCRIPT OPTIMISÉ
+=======================================
+
+PROBLÈME :
+    pd.merge() entre df_accepted0 et codeclient peut créer des doublons.
+    Exemple :
+        df_accepted0 : 1 ligne CLI001
+        codeclient   : 3 lignes CLI001 (même client, même date, même montant)
+        → pd.merge() crée 3 lignes CLI001 dans le résultat
+
+    On veut :
+        df_matched  : 1 ligne CLI001 (le premier match)
+        df_doublons : 2 lignes CLI001 (les doublons)
+
+STRATÉGIE :
+    1. Ajouter un ID unique à chaque ligne de df_accepted0 AVANT le merge
+    2. Faire le merge normalement
+    3. Numéroter les correspondances par ID (rang 1, 2, 3...)
+    4. rang=1  → matched  (une ligne sss = une ligne bbcc)
+    5. rang>1  → doublon  (une ligne sss = plusieurs lignes bbcc)
+    6. ID absent du résultat → unmatched
+
+"""
+
+import pandas as pd
+
+
+# ==============================================================================
+# FONCTION PRINCIPALE : MERGE AVEC GESTION DES DOUBLONS
+# ==============================================================================
+
+def merge_avec_doublons(df_gauche, df_droite,
+                        left_on, right_on,
+                        suffixes=('_dfu', '_dfc')):
+    """
+    Effectue un merge pandas et sépare proprement :
+        - df_matched  : chaque ligne gauche matchée une seule fois (rang 1)
+        - df_doublons : lignes gauche matchées plusieurs fois (rang > 1)
+        - df_unmatched_gauche : lignes gauche sans aucun match
+        - df_unmatched_droite : lignes droite sans aucun match
+
+    RÈGLE DOUBLON :
+        Si une ligne de df_gauche correspond à N lignes de df_droite :
+          → rang 1 = matched
+          → rang 2, 3, ..., N = doublons
+
+    Args:
+        df_gauche : DataFrame gauche  (ex: df_accepted0)
+        df_droite : DataFrame droite  (ex: codeclient)
+        left_on   : liste des colonnes de jointure côté gauche
+        right_on  : liste des colonnes de jointure côté droite
+        suffixes  : suffixes pour colonnes en doublon de nom
+
+    Returns:
+        dict avec les clés :
+            'matched'           → DataFrame (lignes 1:1)
+            'doublons'          → DataFrame (lignes 1:N, rang > 1)
+            'unmatched_gauche'  → DataFrame (pas de match dans droite)
+            'unmatched_droite'  → DataFrame (pas de match dans gauche)
+
+    Exemple:
+        >>> resultats = merge_avec_doublons(
+        ...     df_accepted0, codeclient,
+        ...     left_on  = ['CBS ID', 'DATE TRANSACTION', 'sens', 'MONTANT'],
+        ...     right_on = ['CLI_S',  'DCO_S',            'SEN_S', 'MON_S'],
+        ...     suffixes = ('_dfu', '_dfc')
+        ... )
+        >>> df_matched          = resultats['matched']
+        >>> df_doublons         = resultats['doublons']
+        >>> df_unmatched_sss     = resultats['unmatched_gauche']
+        >>> df_unmatched_bbcc  = resultats['unmatched_droite']
+    """
+
+    # ------------------------------------------------------------------
+    # ÉTAPE 1 : Ajouter un ID unique à chaque ligne des deux côtés
+    # ------------------------------------------------------------------
+    # Pourquoi ?
+    #   Sans ID, après le merge, on ne peut pas savoir quelle ligne
+    #   de df_gauche correspond à quelle ligne de df_droite.
+    #   L'ID nous permet de :
+    #     - Compter combien de fois chaque ligne gauche apparaît (doublons)
+    #     - Retrouver les lignes qui n'ont PAS matché (unmatched)
+
+    df_g = df_gauche.copy()
+    df_d = df_droite.copy()
+
+    df_g['_id_g'] = range(len(df_g))  # 0, 1, 2, ... len(gauche)-1
+    df_d['_id_d'] = range(len(df_d))  # 0, 1, 2, ... len(droite)-1
+
+    # ------------------------------------------------------------------
+    # ÉTAPE 2 : Merge INNER (uniquement les lignes qui matchent des 2 côtés)
+    # ------------------------------------------------------------------
+    df_merge = pd.merge(
+        df_g,
+        df_d,
+        left_on=left_on,
+        right_on=right_on,
+        how='inner',
+        suffixes=suffixes
+    )
+
+    # ------------------------------------------------------------------
+    # ÉTAPE 3 : Numéroter les correspondances PAR LIGNE GAUCHE ORIGINALE
+    # ------------------------------------------------------------------
+    # groupby('_id_g') groupe toutes les lignes du merge qui viennent
+    # de la même ligne gauche originale.
+    # cumcount() donne 0, 1, 2... → +1 pour avoir 1, 2, 3...
+    #
+    # Exemple :
+    #   CLI001 (id_g=0) apparaît 3 fois dans df_merge :
+    #     → rang 1 : CLI001 avec bbcc ligne A  ← matched
+    #     → rang 2 : CLI001 avec bbcc ligne B  ← doublon
+    #     → rang 3 : CLI001 avec bbcc ligne C  ← doublon
+
+    if len(df_merge) > 0:
+        df_merge['_rang'] = df_merge.groupby('_id_g').cumcount() + 1
+    else:
+        df_merge['_rang'] = []
+
+    # ------------------------------------------------------------------
+    # ÉTAPE 4 : Séparer matched (rang=1) et doublons (rang>1)
+    # ------------------------------------------------------------------
+    df_matched  = df_merge[df_merge['_rang'] == 1].copy()
+    df_doublons = df_merge[df_merge['_rang']  > 1].copy()
+
+    # ------------------------------------------------------------------
+    # ÉTAPE 5 : Trouver les unmatched (lignes sans aucun match)
+    # ------------------------------------------------------------------
+    # IDs des lignes gauche qui ont matché (au moins rang 1)
+    ids_g_matched = set(df_matched['_id_g'])
+
+    # IDs des lignes droite qui ont matché
+    ids_d_matched = set(df_matched['_id_d']) | set(df_doublons['_id_d'])
+
+    # Lignes gauche sans aucun match
+    df_unmatched_gauche = df_gauche[~df_g['_id_g'].isin(ids_g_matched)].copy()
+
+    # Lignes droite sans aucun match
+    df_unmatched_droite = df_droite[~df_d['_id_d'].isin(ids_d_matched)].copy()
+
+    # ------------------------------------------------------------------
+    # ÉTAPE 6 : Nettoyer les colonnes temporaires
+    # ------------------------------------------------------------------
+    for col in ['_id_g', '_id_d', '_rang']:
+        for df_ in [df_matched, df_doublons]:
+            if col in df_.columns:
+                df_.drop(columns=[col], inplace=True)
+
+    return {
+        'matched'          : df_matched,
+        'doublons'         : df_doublons,
+        'unmatched_gauche' : df_unmatched_gauche,
+        'unmatched_droite' : df_unmatched_droite,
+    }
+
+
+# ==============================================================================
+# TEST
+# ==============================================================================
+
+if __name__ == '__main__':
+
+    print("=" * 60)
+    print("TEST : GESTION DES DOUBLONS")
+    print("=" * 60)
+
+    # --------------------------------------------------------------------------
+    # Données de test
+    # --------------------------------------------------------------------------
+    df_sss = pd.DataFrame({
+        'CBS ID'          : ['CLI001', 'CLI002', 'CLI003', 'CLI004'],
+        'DATE TRANSACTION': ['2026-02-10', '2026-02-10', '2026-02-11', '2026-02-10'],
+        'sens'            : ['DEBIT',  'CREDIT', 'DEBIT',  'CREDIT'],
+        'MONTANT'         : [100_000,   50_000,  75_000,  120_000],
+    })
+
+    df_bbcc = pd.DataFrame({
+        'CLI_S' : ['CLI001', 'CLI001', 'CLI002', 'CLI003', 'CLI005'],
+        #          ↑ CLI001 en doublon !          ↑ CLI005 n'existe pas dans sss
+        'DCO_S' : ['2026-02-10', '2026-02-10', '2026-02-10', '2026-02-11', '2026-02-10'],
+        'SEN_S' : ['DEBIT',      'DEBIT',       'CREDIT',     'DEBIT',      'CREDIT'],
+        'MON_S' : [100_000,      100_000,        50_000,       75_000,       30_000],
+    })
+
+    print("\ndf_sss (gauche) :")
+    print(df_sss.to_string(index=False))
+    print(f"\ndf_bbcc (droite) :")
+    print(df_bbcc.to_string(index=False))
+    print(f"\n→ CLI001 est en doublon dans df_bbcc (2 lignes identiques)")
+    print(f"→ CLI004 n'est pas dans df_bbcc   (unmatched gauche)")
+    print(f"→ CLI005 n'est pas dans df_sss       (unmatched droite)")
+
+    # --------------------------------------------------------------------------
+    # Appel de la fonction
+    # --------------------------------------------------------------------------
+    resultats = merge_avec_doublons(
+        df_gauche = df_sss,
+        df_droite = df_bbcc,
+        left_on   = ['CBS ID', 'DATE TRANSACTION', 'sens', 'MONTANT'],
+        right_on  = ['CLI_S',  'DCO_S',            'SEN_S', 'MON_S'],
+        suffixes  = ('_dfu', '_dfc'),
+    )
+
+    df_matched         = resultats['matched']
+    df_doublons        = resultats['doublons']
+    df_unmatched_sss    = resultats['unmatched_gauche']
+    df_unmatched_bbcc = resultats['unmatched_droite']
+
+    # --------------------------------------------------------------------------
+    # Affichage des résultats
+    # --------------------------------------------------------------------------
+    print("\n" + "=" * 60)
+    print("RÉSULTATS")
+    print("=" * 60)
+
+    print(f"\n✅ MATCHED ({len(df_matched)} ligne(s)) :")
+    print("   Une ligne sss  ↔  une ligne bbcc")
+    print(df_matched[['CBS ID', 'DATE TRANSACTION', 'MONTANT']].to_string(index=False))
+
+    print(f"\n⚠️  DOUBLONS ({len(df_doublons)} ligne(s)) :")
+    print("   Une ligne sss  ↔  plusieurs lignes bbcc (rang > 1)")
+    if len(df_doublons) > 0:
+        print(df_doublons[['CBS ID', 'DATE TRANSACTION', 'MONTANT']].to_string(index=False))
+    else:
+        print("   Aucun")
+
+    print(f"\n⚠️  UNMATCHED sss ({len(df_unmatched_sss)} ligne(s)) :")
+    print("   Dans sss mais pas dans bbcc")
+    if len(df_unmatched_sss) > 0:
+        print(df_unmatched_sss[['CBS ID', 'DATE TRANSACTION', 'MONTANT']].to_string(index=False))
+    else:
+        print("   Aucun")
+
+    print(f"\n⚠️  UNMATCHED bbcc ({len(df_unmatched_bbcc)} ligne(s)) :")
+    print("   Dans bbcc mais pas dans sss")
+    if len(df_unmatched_bbcc) > 0:
+        print(df_unmatched_bbcc[['CLI_S', 'DCO_S', 'MON_S']].to_string(index=False))
+    else:
+        print("   Aucun")
+
+    # --------------------------------------------------------------------------
+    # Vérification des totaux
+    # --------------------------------------------------------------------------
+    print("\n" + "=" * 60)
+    print("VÉRIFICATION")
+    print("=" * 60)
+    print(f"  sss total     : {len(df_sss)}")
+    print(f"  = matched    : {len(df_matched)}")
+    print(f"  + unmatched  : {len(df_unmatched_sss)}")
+    print(f"  = {len(df_matched) + len(df_unmatched_sss)} ✅" if len(df_matched) + len(df_unmatched_sss) == len(df_sss) else "  ≠ ERREUR ❌")
+
+    print(f"\n  bbcc total  : {len(df_bbcc)}")
+    print(f"  = matched    : {len(df_matched)}")
+    print(f"  + doublons   : {len(df_doublons)}")
+    print(f"  + unmatched  : {len(df_unmatched_bbcc)}")
+    total_bbcc = len(df_matched) + len(df_doublons) + len(df_unmatched_bbcc)
+    print(f"  = {total_bbcc} ✅" if total_bbcc == len(df_bbcc) else f"  = {total_bbcc} ≠ ERREUR ❌")
+
+    print("\n" + "=" * 60)
+    print("💡 UTILISATION DANS VOTRE CODE :")
+    print("=" * 60)
+    print("""
+    from gestion_doublons import merge_avec_doublons
+
+    resultats = merge_avec_doublons(
+        df_gauche = df_accepted0,
+        df_droite = codeclient,
+        left_on   = ['CBS ID', 'DATE TRANSACTION', 'sens', 'MONTANT'],
+        right_on  = ['CLI_S',  'DCO_S',            'SEN_S', 'MON_S'],
+        suffixes  = ('_dfu', '_dfc'),
+    )
+
+    df_matched         = resultats['matched']
+    df_doublons        = resultats['doublons']
+    df_unmatched_sss    = resultats['unmatched_gauche']
+    df_unmatched_bbcc = resultats['unmatched_droite']
+    """)
+
+_____________________________
+
+"""
+TRAITEMENT DES DOUBLONS ET MISE À JOUR DU FICHIER FINAL
+========================================================
+
+CONTEXTE :
+    Les transactions "à régulariser" du jour J peuvent être comptabilisées
+    dans bk au jour J+1, J+2 ou J+3 (décalage temporel).
+    
+    Quand on détecte un doublon bk (rang > 1), on vérifie si cette
+    transaction était "à régulariser" dans le fichier Final de la veille.
+    Si oui → on met à jour l'indication en "comptabilisée" avec la date.
+
+WORKFLOW :
+    1. On a détecté les doublons avec merge_avec_doublons()
+    2. On extrait les clés de jointure des doublons (rang > 1)
+    3. On charge le fichier Final de la veille (historique)
+    4. On cherche ces clés dans Final où indication='a regularise'
+    5. On met à jour : indication_nouvelle='comptabilisee', date_comptabilisation=DCO
+    6. Si plusieurs correspondances → on prend la plus ancienne (min date)
+    7. On sauvegarde le Final mis à jour
+
+CLÉS DE JOINTURE :
+    - date
+    - montant  
+    - code (ou id client)
+    - sens
+
+Date: Février 2026
+"""
+
+import pandas as pd
+from datetime import datetime, timedelta
+import os
+
+
+# ==============================================================================
+# FONCTION 1 : EXTRAIRE LES CLÉS DES DOUBLONS
+# ==============================================================================
+
+def extraire_cles_doublons(df_doublons, colonnes_cles):
+    """
+    Extrait les clés de jointure uniques des lignes en doublon.
+    
+    Args:
+        df_doublons : DataFrame des doublons (rang > 1)
+        colonnes_cles : liste des noms de colonnes formant la clé
+                       Ex: ['date', 'montant', 'code', 'sens']
+    
+    Returns:
+        DataFrame avec uniquement les clés uniques des doublons
+    
+    Performance: O(n log n) avec drop_duplicates
+    
+    Exemple:
+        >>> cles = extraire_cles_doublons(
+        ...     df_doublons,
+        ...     colonnes_cles=['date', 'montant', 'code', 'sens']
+        ... )
+        >>> print(cles)
+        #        date  montant   code   sens
+        # 0  10/02/26     5000  CLI01  DEBIT
+        # 1  11/02/26    10000  CLI02  CREDIT
+    """
+    if len(df_doublons) == 0:
+        print("   ℹ️  Aucun doublon à traiter")
+        return pd.DataFrame(columns=colonnes_cles)
+    
+    # Extraire les colonnes clés et supprimer les doublons
+    df_cles = df_doublons[colonnes_cles].drop_duplicates()
+    
+    print(f"   📋 {len(df_cles)} clé(s) unique(s) extraite(s) des doublons")
+    
+    return df_cles
+
+
+# ==============================================================================
+# FONCTION 2 : CHARGER LE FICHIER FINAL DE LA VEILLE
+# ==============================================================================
+
+def charger_final_veille(chemin_final, plage_jours=3):
+    """
+    Charge le fichier Final cumulatif (historique des transactions).
+    
+    Le fichier Final contient l'historique des N derniers jours.
+    On charge seulement les lignes récentes (plage_jours) pour optimiser.
+    
+    Args:
+        chemin_final : chemin du fichier Final CSV
+        plage_jours : nombre de jours d'historique à garder (défaut: 3)
+    
+    Returns:
+        DataFrame du fichier Final
+    
+    Colonnes attendues:
+        date, montant, id, sens, code, statut_sss, statut_bbcc,
+        indication, num_bk, indication_nouvelle,
+        date_comptabilisation, date_execution
+    
+    Performance: O(n) pour la lecture, O(n) pour le filtrage date
+    
+    Exemple:
+        >>> df_final = charger_final_veille('final_10_02_26.csv', plage_jours=3)
+        >>> print(f"Chargé: {len(df_final)} lignes")
+    """
+    if not os.path.exists(chemin_final):
+        print(f"   ⚠️  Fichier Final non trouvé : {chemin_final}")
+        print(f"   → Création d'un DataFrame vide")
+        return pd.DataFrame()
+    
+    # Charger le fichier
+    df_final = pd.read_csv(chemin_final, dtype={'code': str, 'id': str})
+    
+    print(f"   📂 Fichier Final chargé : {len(df_final):,} lignes")
+    
+    # Convertir la date en datetime pour filtrer
+    df_final['date'] = pd.to_datetime(df_final['date'], format='%d/%m/%Y', errors='coerce')
+    
+    # Filtrer les N derniers jours (optimisation mémoire)
+    if len(df_final) > 0 and plage_jours > 0:
+        date_limite = df_final['date'].max() - pd.Timedelta(days=plage_jours)
+        df_final = df_final[df_final['date'] >= date_limite]
+        print(f"   🔍 Après filtrage (derniers {plage_jours} jours) : {len(df_final):,} lignes")
+    
+    return df_final
+
+
+# ==============================================================================
+# FONCTION 3 : METTRE À JOUR LE FINAL AVEC LES DOUBLONS COMPTABILISÉS
+# ==============================================================================
+
+def mettre_a_jour_final_avec_doublons(df_doublons, df_final_veille, 
+                                       colonnes_cles, date_execution):
+    """
+    Met à jour le fichier Final en marquant les doublons comme "comptabilisés".
+    
+    LOGIQUE :
+        1. Extraire les clés des doublons (rang > 1)
+        2. Chercher ces clés dans Final où indication='a regularise'
+        3. Si trouvé → mettre à jour :
+           - indication_nouvelle = 'comptabilisee'
+           - date_comptabilisation = date du doublon (DCO)
+        4. Si plusieurs lignes Final matchent → garder la plus ancienne
+        5. Marquer ces lignes avec date_execution (traçabilité)
+    
+    Args:
+        df_doublons : DataFrame des doublons détectés
+        df_final_veille : DataFrame du fichier Final chargé
+        colonnes_cles : liste des colonnes de jointure
+        date_execution : date du traitement du jour (format datetime ou str)
+    
+    Returns:
+        df_final_mis_a_jour : DataFrame Final avec les mises à jour
+    
+    Performance: O(n log m) avec jointure pandas optimisée
+    
+    Exemple:
+        >>> df_final_maj = mettre_a_jour_final_avec_doublons(
+        ...     df_doublons,
+        ...     df_final_veille,
+        ...     colonnes_cles=['date', 'montant', 'code', 'sens'],
+        ...     date_execution='18/02/2026'
+        ... )
+    """
+    print("\n" + "="*70)
+    print("MISE À JOUR DU FICHIER FINAL AVEC LES DOUBLONS")
+    print("="*70)
+    
+    # Convertir date_execution en string format DD/MM/YYYY si datetime
+    if isinstance(date_execution, (datetime, pd.Timestamp)):
+        date_execution_str = date_execution.strftime('%d/%m/%Y')
+    else:
+        date_execution_str = date_execution
+    
+    # -------------------------------------------------------------------------
+    # ÉTAPE 1 : Extraire les clés des doublons
+    # -------------------------------------------------------------------------
+    print("\n1️⃣ Extraction des clés des doublons...")
+    df_cles_doublons = extraire_cles_doublons(df_doublons, colonnes_cles)
+    
+    if len(df_cles_doublons) == 0:
+        print("   ✅ Aucun doublon à traiter, Final inchangé")
+        return df_final_veille
+    
+    # Ajouter la date de comptabilisation (= date du doublon)
+    # On suppose que df_doublons a une colonne 'DCO_S' ou 'date' pour la date bbcc
+    if 'DCO_S' in df_doublons.columns:
+        colonne_date_bbcc = 'DCO_S'
+    elif 'date' in df_doublons.columns:
+        colonne_date_bbcc = 'date'
+    else:
+        colonne_date_bbcc = colonnes_cles[0]  # Par défaut, première clé (souvent 'date')
+    
+    # Créer un mapping clé → date de comptabilisation
+    df_cles_avec_date = df_doublons[colonnes_cles + [colonne_date_bbcc]].copy()
+    df_cles_avec_date = df_cles_avec_date.drop_duplicates(subset=colonnes_cles)
+    df_cles_avec_date.rename(columns={colonne_date_bbcc: '_date_comptabilisation_doublon'}, inplace=True)
+    
+    # Convertir les colonnes date en datetime pour harmoniser avec Final
+    for col in colonnes_cles:
+        if 'date' in col.lower():
+            df_cles_avec_date[col] = pd.to_datetime(df_cles_avec_date[col], format='%d/%m/%Y', errors='coerce')
+        elif 'montant' in col.lower():
+            df_cles_avec_date[col] = pd.to_numeric(df_cles_avec_date[col], errors='coerce')
+        elif col in ['code', 'id', 'sens']:
+            df_cles_avec_date[col] = df_cles_avec_date[col].astype(str)
+    
+    # -------------------------------------------------------------------------
+    # ÉTAPE 2 : Filtrer le Final sur indication='a regularise'
+    # -------------------------------------------------------------------------
+    print("\n2️⃣ Recherche dans le Final (indication='a regularise')...")
+    
+    if len(df_final_veille) == 0:
+        print("   ⚠️  Fichier Final vide, aucune mise à jour possible")
+        return df_final_veille
+    
+    # Filtrer seulement les lignes "à régulariser"
+    df_final_a_regulariser = df_final_veille[
+        df_final_veille['indication'].str.lower().str.strip() == 'a regularise'
+    ].copy()
+    
+    print(f"   → {len(df_final_a_regulariser):,} lignes 'à régulariser' dans Final")
+    
+    if len(df_final_a_regulariser) == 0:
+        print("   ✅ Aucune ligne 'à régulariser', Final inchangé")
+        return df_final_veille
+    
+    # Harmoniser les types des colonnes clés dans Final
+    for col in colonnes_cles:
+        if col in df_final_a_regulariser.columns:
+            if 'montant' in col.lower():
+                df_final_a_regulariser[col] = pd.to_numeric(df_final_a_regulariser[col], errors='coerce')
+            elif col in ['code', 'id', 'sens']:
+                df_final_a_regulariser[col] = df_final_a_regulariser[col].astype(str)
+    
+    # -------------------------------------------------------------------------
+    # ÉTAPE 3 : Jointure pour trouver les correspondances
+    # -------------------------------------------------------------------------
+    print("\n3️⃣ Jointure Final ↔ Clés doublons...")
+    
+    # Ajouter un ID unique au Final pour tracer les lignes
+    df_final_a_regulariser['_id_final'] = range(len(df_final_a_regulariser))
+    
+    # Jointure sur les clés
+    df_correspondances = pd.merge(
+        df_final_a_regulariser,
+        df_cles_avec_date,
+        on=colonnes_cles,
+        how='inner'
+    )
+    
+    print(f"   → {len(df_correspondances):,} correspondance(s) trouvée(s)")
+    
+    if len(df_correspondances) == 0:
+        print("   ✅ Aucune correspondance, Final inchangé")
+        return df_final_veille
+    
+    # -------------------------------------------------------------------------
+    # ÉTAPE 4 : Si plusieurs correspondances → garder la plus ancienne
+    # -------------------------------------------------------------------------
+    print("\n4️⃣ Gestion des multiples correspondances (garder la plus ancienne)...")
+    
+    # Compter les doublons de correspondance
+    nb_multiples = df_correspondances.groupby(colonnes_cles).size()
+    nb_avec_multiples = (nb_multiples > 1).sum()
+    
+    if nb_avec_multiples > 0:
+        print(f"   ⚠️  {nb_avec_multiples} clé(s) avec plusieurs correspondances dans Final")
+        print(f"   → On garde la ligne la plus ancienne (min date) pour chaque clé")
+        
+        # Grouper par clés et garder l'ID de la ligne avec la date la plus ancienne
+        idx_a_garder = df_correspondances.groupby(colonnes_cles)['date'].idxmin()
+        df_correspondances = df_correspondances.loc[idx_a_garder]
+        
+        print(f"   → Après déduplication : {len(df_correspondances):,} ligne(s)")
+    else:
+        print(f"   ✅ Aucune correspondance multiple, pas de déduplication nécessaire")
+    
+    # -------------------------------------------------------------------------
+    # ÉTAPE 5 : Mettre à jour les colonnes
+    # -------------------------------------------------------------------------
+    print("\n5️⃣ Mise à jour des colonnes...")
+    
+    # IDs des lignes Final à mettre à jour
+    ids_a_maj = set(df_correspondances['_id_final'])
+    
+    # Créer un mapping _id_final → date_comptabilisation
+    mapping_date_compta = df_correspondances.set_index('_id_final')['_date_comptabilisation_doublon'].to_dict()
+    
+    # Copier le Final pour modification
+    df_final_maj = df_final_veille.copy()
+    
+    # S'assurer que les colonnes texte sont bien de type object (string)
+    for col in ['indication_nouvelle', 'date_comptabilisation', 'date_execution']:
+        if col in df_final_maj.columns:
+            df_final_maj[col] = df_final_maj[col].astype(object)
+    
+    # Ajouter un ID temporaire pour faciliter la mise à jour
+    df_final_maj['_id_temp'] = range(len(df_final_maj))
+    
+    # Identifier les lignes à mettre à jour
+    mask_a_maj = df_final_maj['_id_temp'].isin(
+        df_final_a_regulariser[df_final_a_regulariser['_id_final'].isin(ids_a_maj)].index
+    )
+    
+    nb_maj = mask_a_maj.sum()
+    print(f"   → {nb_maj} ligne(s) à mettre à jour dans Final")
+    
+    # Mettre à jour indication_nouvelle
+    df_final_maj.loc[mask_a_maj, 'indication_nouvelle'] = 'comptabilisee'
+    
+    # Mettre à jour date_comptabilisation
+    # Il faut mapper avec l'ID final
+    for idx_final in df_final_a_regulariser[df_final_a_regulariser['_id_final'].isin(ids_a_maj)].index:
+        if idx_final in mapping_date_compta:
+            date_compta = mapping_date_compta.get(
+                df_final_a_regulariser.loc[idx_final, '_id_final']
+            )
+            if pd.notna(date_compta):
+                df_final_maj.loc[idx_final, 'date_comptabilisation'] = pd.to_datetime(date_compta).strftime('%d/%m/%Y')
+    
+    # Mettre à jour date_execution (traçabilité du traitement)
+    df_final_maj.loc[mask_a_maj, 'date_execution'] = date_execution_str
+    
+    # Nettoyer les colonnes temporaires
+    df_final_maj.drop(columns=['_id_temp'], inplace=True)
+    
+    # -------------------------------------------------------------------------
+    # ÉTAPE 6 : Résumé
+    # -------------------------------------------------------------------------
+    print("\n" + "="*70)
+    print("📊 RÉSUMÉ DES MISES À JOUR")
+    print("="*70)
+    print(f"✅ {nb_maj} ligne(s) mise(s) à jour :")
+    print(f"   • indication_nouvelle = 'comptabilisee'")
+    print(f"   • date_comptabilisation = date du doublon")
+    print(f"   • date_execution = {date_execution_str}")
+    print("="*70)
+    
+    return df_final_maj
+
+
+# ==============================================================================
+# FONCTION 4 : SAUVEGARDER LE FINAL MIS À JOUR
+# ==============================================================================
+
+def sauvegarder_final(df_final, chemin_sortie):
+    """
+    Sauvegarde le fichier Final mis à jour.
+    
+    Args:
+        df_final : DataFrame Final mis à jour
+        chemin_sortie : chemin de sauvegarde du fichier CSV
+    
+    Returns:
+        None
+    
+    Exemple:
+        >>> sauvegarder_final(df_final_maj, 'final_11_02_26.csv')
+    """
+    # Convertir les dates en format DD/MM/YYYY pour le CSV
+    for col in ['date', 'date_comptabilisation', 'date_execution']:
+        if col in df_final.columns:
+            df_final[col] = pd.to_datetime(df_final[col], errors='coerce').dt.strftime('%d/%m/%Y')
+    
+    df_final.to_csv(chemin_sortie, index=False)
+    print(f"\n💾 Fichier Final sauvegardé : {chemin_sortie}")
+    print(f"   → {len(df_final):,} lignes")
+
+
+# ==============================================================================
+# FONCTION PRINCIPALE : ORCHESTRATION COMPLÈTE
+# ==============================================================================
+
+def traiter_regularisation_doublons(df_doublons, 
+                                     chemin_final_veille,
+                                     chemin_final_sortie,
+                                     colonnes_cles=['date', 'montant', 'code', 'sens'],
+                                     date_execution=None):
+    """
+    Orchestre le traitement complet des doublons et la mise à jour du Final.
+    
+    WORKFLOW COMPLET :
+        1. Charger le fichier Final de la veille
+        2. Extraire les clés des doublons (rang > 1)
+        3. Chercher ces clés dans Final où indication='a regularise'
+        4. Mettre à jour : indication_nouvelle='comptabilisee', date_comptabilisation
+        5. Sauvegarder le Final mis à jour
+    
+    Args:
+        df_doublons : DataFrame des doublons détectés (rang > 1)
+        chemin_final_veille : chemin du fichier Final de la veille
+        chemin_final_sortie : chemin de sauvegarde du Final mis à jour
+        colonnes_cles : liste des colonnes de jointure
+        date_execution : date du traitement (défaut: aujourd'hui)
+    
+    Returns:
+        df_final_maj : DataFrame Final mis à jour
+    
+    Exemple d'utilisation:
+        >>> from gestion_doublons import merge_avec_doublons
+        >>> from regularisation_doublons import traiter_regularisation_doublons
+        >>> 
+        >>> # Étape 1 : Détecter les doublons
+        >>> resultats = merge_avec_doublons(df_accepted0, codeclient, ...)
+        >>> df_doublons = resultats['doublons']
+        >>> 
+        >>> # Étape 2 : Traiter les doublons et mettre à jour Final
+        >>> df_final_maj = traiter_regularisation_doublons(
+        ...     df_doublons,
+        ...     chemin_final_veille='final_10_02_26.csv',
+        ...     chemin_final_sortie='final_11_02_26.csv',
+        ...     colonnes_cles=['date', 'montant', 'code', 'sens'],
+        ...     date_execution='11/02/2026'
+        ... )
+    """
+    print("\n" + "="*70)
+    print("TRAITEMENT DES RÉGULARISATIONS - DOUBLONS")
+    print("="*70)
+    
+    # Date par défaut = aujourd'hui
+    if date_execution is None:
+        date_execution = datetime.now().strftime('%d/%m/%Y')
+    
+    print(f"📅 Date d'exécution : {date_execution}")
+    
+    # -------------------------------------------------------------------------
+    # ÉTAPE 1 : Charger le Final de la veille
+    # -------------------------------------------------------------------------
+    print(f"\n📂 Chargement du fichier Final de la veille...")
+    df_final_veille = charger_final_veille(chemin_final_veille, plage_jours=3)
+    
+    # -------------------------------------------------------------------------
+    # ÉTAPE 2 : Mettre à jour avec les doublons
+    # -------------------------------------------------------------------------
+    df_final_maj = mettre_a_jour_final_avec_doublons(
+        c,
+        df_final_veille,
+        colonnes_cles,
+        date_execution
+    )
+    
+    # -------------------------------------------------------------------------
+    # ÉTAPE 3 : Sauvegarder
+    # -------------------------------------------------------------------------
+    sauvegarder_final(df_final_maj, chemin_final_sortie)
+    
+    return df_final_maj
+
+
+# ==============================================================================
+# TEST COMPLET
+# ==============================================================================
+
+if __name__ == '__main__':
+    
+    print("\n" + "="*70)
+    print("🧪 TEST COMPLET : RÉGULARISATION DES DOUBLONS")
+    print("="*70)
+    
+    # -------------------------------------------------------------------------
+    # Créer un fichier Final de test (simule la veille)
+    # -------------------------------------------------------------------------
+    df_final_test = pd.DataFrame({
+        'date'                  : ['10/02/2026', '11/02/2026', '11/02/2026'],
+        'montant'               : [5000,         5000,         10000],
+        'id'                    : ['TXN001',     'TXN001',     'TXN002'],
+        'sens'                  : ['D',          'D',          'C'],
+        'code'                  : ['CLI01',      'CLI01',      'CLI02'],
+        'statut_sss'             : ['OK',         'OK',         'OK'],
+        'statut_bbcc'          : ['OK',         'OK',         'OK'],
+        'indication'            : ['comptabilisée', 'a regularise', 'a regularise'],
+        'num_bk'             : ['BK001',      'BK005',      'BK006'],
+        'indication_nouvelle'   : ['',           '',           ''],
+        'date_comptabilisation' : ['',           '',           ''],
+        'date_execution'        : ['10/02/2026', '',           ''],
+    })
+    
+    # Sauvegarder le Final de test
+    df_final_test.to_csv('final_10_02_26_test.csv', index=False)
+    print("\n📄 Fichier Final de test créé : final_10_02_26_test.csv")
+    print(df_final_test.to_string(index=False))
+    
+    # -------------------------------------------------------------------------
+    # Créer des doublons de test
+    # -------------------------------------------------------------------------
+    df_doublons_test = pd.DataFrame({
+        'date'   : ['11/02/2026', '11/02/2026'],
+        'montant': [5000,         10000],
+        'code'   : ['CLI01',      'CLI02'],
+        'sens'   : ['D',          'C'],
+        'DCO_S'  : ['11/02/2026', '11/02/2026'],
+        '_rang'  : [2,            2],  # rang > 1 = doublon
+    })
+    
+    print("\n📄 Doublons détectés (rang > 1) :")
+    print(df_doublons_test.to_string(index=False))
+    
+    # -------------------------------------------------------------------------
+    # Traiter la régularisation
+    # -------------------------------------------------------------------------
+    df_final_maj = traiter_regularisation_doublons(
+        df_doublons         = df_doublons_test,
+        chemin_final_veille = 'final_10_02_26_test.csv',
+        chemin_final_sortie = 'final_11_02_26_test.csv',
+        colonnes_cles       = ['date', 'montant', 'code', 'sens'],
+        date_execution      = '11/02/2026'
+    )
+    
+    # -------------------------------------------------------------------------
+    # Afficher le résultat
+    # -------------------------------------------------------------------------
+    print("\n" + "="*70)
+    print("📋 FICHIER FINAL MIS À JOUR")
+    print("="*70)
+    print(df_final_maj[['date', 'code', 'montant', 'indication', 
+                        'indication_nouvelle', 'date_comptabilisation', 
+                        'date_execution']].to_string(index=False))
+    
+    print("\n" + "="*70)
+    print("✅ TEST TERMINÉ")
+    print("="*70)
+    
+    print("""
+💡 UTILISATION EN PRODUCTION :
+
+    from gestion_doublons import merge_avec_doublons
+    from regularisation_doublons import traiter_regularisation_doublons
+    
+    # Étape 1 : Détecter les doublons
+    resultats = merge_avec_doublons(
+        df_accepted0, codeclient,
+        left_on=['CBS ID', 'DATE TRANSACTION', 'sens', 'MONTANT'],
+        right_on=['CLI_S', 'DCO_S', 'SEN_S', 'MON_S']
+    )
+    
+    df_doublons = resultats['doublons']
+    
+    # Étape 2 : Mettre à jour le Final avec les régularisations
+    df_final_maj = traiter_regularisation_doublons(
+        df_doublons,
+        chemin_final_veille='final_10_02_26.csv',
+        chemin_final_sortie='final_11_02_26.csv',
+        colonnes_cles=['date', 'montant', 'code', 'sens'],
+        date_execution='11/02/2026'
+    )
+    """)
