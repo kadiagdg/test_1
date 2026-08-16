@@ -1,0 +1,84 @@
+SELECT 
+    id,
+    seg,
+    salaire,
+    datebudget,
+    budgetn,
+    dateca,
+    ca,
+
+    -- === CA FINAL ===
+    CASE 
+        WHEN seg = 'PARTI' 
+            THEN salaire
+
+        WHEN seg = 'PRO' AND ca IS NULL AND dateca IS NULL AND salaire IS NOT NULL 
+            THEN salaire
+
+        WHEN seg = 'PRO' 
+            THEN ca
+
+        WHEN seg = 'ASSO' AND ca IS NOT NULL AND ca > 1 
+            THEN ca
+
+        WHEN seg = 'ASSO' 
+            THEN budgetn
+
+        WHEN seg = 'ENTRE' 
+            THEN ca
+
+        ELSE ca -- filet de sécurité si un seg inconnu apparaît
+    END AS ca_final,
+
+    -- === DATE CA FINALE ===
+    CASE 
+        WHEN seg = 'PARTI' 
+            THEN dateca      -- ⚠️ à préciser, voir remarque plus bas
+
+        WHEN seg = 'PRO' AND ca IS NULL AND dateca IS NULL AND salaire IS NOT NULL 
+            THEN dateca       -- reste NULL/inchangée, comme demandé
+
+        WHEN seg = 'PRO' 
+            THEN dateca
+
+        WHEN seg = 'ASSO' AND ca IS NOT NULL AND ca > 1 
+            THEN dateca
+
+        WHEN seg = 'ASSO' 
+            THEN datebudget
+
+        WHEN seg = 'ENTRE' 
+            THEN dateca
+
+        ELSE dateca
+    END AS dateca_final
+
+FROM ton_df;
+
+___________________________________________________________________________
+
+## Règles métier — Calcul du CA final et de la Date CA finale
+
+**Règle PARTI** : Le CA final correspond systématiquement au salaire ; la date de CA n'est pas recalculée.
+
+**Règle PRO** : Le CA final correspond au salaire uniquement si le CA et la date de CA sont tous deux vides et que le salaire est renseigné ; dans tous les autres cas, le CA et la date de CA existants sont conservés sans modification.
+
+**Règle ASSO** : Le CA final et sa date sont conservés tels quels si le CA est renseigné et strictement supérieur à 1 ; sinon, le CA final est remplacé par le montant du budget et sa date par la date de budget.
+
+**Règle ENTRE** : Le CA final et sa date correspondent systématiquement aux valeurs existantes, sans aucune condition ni retraitement.
+
+**Règle par défaut** : Pour tout segment non couvert par les règles ci-dessus, le CA et la date de CA existants sont conservés à l'identique.
+
+---
+
+### Version tableau (pour cahier des charges)
+
+| # | Segment | Règle métier |
+|---|---------|-------------|
+| 1 | PARTI | CA final = salaire, toujours |
+| 2 | PRO | CA final = salaire, si et seulement si CA vide + date CA vide + salaire renseigné |
+| 3 | PRO | CA final = CA existant, dans tous les autres cas |
+| 4 | ASSO | CA final = CA existant, si CA renseigné et > 1 |
+| 5 | ASSO | CA final = budget, si CA vide ou ≤ 1 |
+| 6 | ENTRE | CA final = CA existant, sans condition |
+| 7 | Autre | CA final = CA existant (règle de sécurité) |
