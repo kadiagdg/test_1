@@ -1,0 +1,168 @@
+import pandas as pd
+from openpyxl import load_workbook
+
+# ============================================
+# 1. CHARGEMENT DU FICHIER EXCEL
+# ============================================
+fichier_excel = "votre_fichier.xlsx"
+wb = load_workbook(fichier_excel)
+ws = wb.active
+
+# ============================================
+# 2. PARAMÈTRES (À ADAPTER)
+# ============================================
+ligne_recap = 5    # Numéro de la ligne "recap"
+ligne_total = 20   # Numéro de la ligne "TOTAL"
+
+# ============================================
+# 3. FONCTION D'INSERTION DE LIGNES
+# ============================================
+def inserer_lignes(ws, position, nb_lignes):
+    """Insère nb_lignes à la position donnée"""
+    for i in range(nb_lignes):
+        ws.insert_rows(position + i)
+
+# ============================================
+# 4. RÉCUPÉRATION DES LIGNES EXISTANTES
+# ============================================
+comptes_existants = {}
+
+print("📥 Récupération des lignes existantes...")
+
+for row in range(ligne_recap + 1, ligne_total):
+    compte = ws.cell(row=row, column=2).value
+    beneficiaire = ws.cell(row=row, column=3).value
+    secteur = ws.cell(row=row, column=4).value
+    montant = ws.cell(row=row, column=5).value
+
+    if compte is None:
+        continue
+
+    if beneficiaire:
+        cle = (str(compte).strip().upper(), str(beneficiaire).strip().upper())
+    else:
+        cle = (str(compte).strip().upper(), "")
+
+    comptes_existants[cle] = {
+        'row': row,
+        'montant': montant if montant else 0,
+        'secteur': secteur,
+        'compte': compte,
+        'beneficiaire': beneficiaire
+    }
+
+print(f"✅ {len(comptes_existants)} lignes existantes récupérées")
+
+# ============================================
+# 5. CHARGEMENT DE recapdf
+# ============================================
+# ⚠️ À ADAPTER : remplacer par le chargement réel, ex.
+# recapdf = pd.read_excel("source.xlsx")
+recapdf = pd.DataFrame({
+    'compte': ['C001', 'C002', 'C003', 'C004', 'C005', 'C006', 'C007'],
+    'bénéficiaire': ['Jean Dupont', 'Marie Martin', 'Paul Durand', 'Sophie Petit',
+                     'Luc Bernard', 'Emma Robert', 'Alice Moreau'],
+    'secteur': ['A', 'B', 'A', 'C', 'B', 'A', 'B'],
+    'somme1': [1000, 2000, 1500, 3000, 2500, 1800, 2200]
+})
+
+print(f"📊 recapdf chargé : {len(recapdf)} lignes")
+
+# ============================================
+# 6. TRAITEMENT DE recapdf POUR CRÉER dftemp
+# ============================================
+dftemp = []
+
+print("🔄 Traitement des données...")
+
+for index, row in recapdf.iterrows():
+    compte = row['compte']
+    beneficiaire = row['bénéficiaire']
+
+    if pd.isna(beneficiaire) or beneficiaire == '':
+        cle = (str(compte).strip().upper(), "")
+    else:
+        cle = (str(compte).strip().upper(), str(beneficiaire).strip().upper())
+
+    if cle in comptes_existants:
+        montant_excel = comptes_existants[cle]['montant']
+        montant_total = montant_excel + row['somme1']
+        dftemp.append({
+            'compte': compte,
+            'beneficiaire': beneficiaire,
+            'secteur': row['secteur'],
+            'montant': montant_total,
+            'statut': 'existant'
+        })
+    else:
+        dftemp.append({
+            'compte': compte,
+            'beneficiaire': beneficiaire,
+            'secteur': row['secteur'],
+            'montant': row['somme1'],
+            'statut': 'nouveau'
+        })
+
+print(f"✅ {len(dftemp)} lignes traitées")
+print(f"   - {sum(1 for x in dftemp if x['statut'] == 'existant')} lignes existantes")
+print(f"   - {sum(1 for x in dftemp if x['statut'] == 'nouveau')} nouvelles lignes")
+
+# ============================================
+# 7. TRI DES DONNÉES PAR BÉNÉFICIAIRE
+# ============================================
+print("🔤 Tri des données par bénéficiaire...")
+dftemp_trie = sorted(dftemp, key=lambda x: str(x['beneficiaire']).upper())
+
+nb_lignes_finales = len(dftemp_trie)
+montant_total_general = sum(x['montant'] for x in dftemp_trie)
+
+# ============================================
+# 8. ÉCRITURE DANS LE FICHIER EXCEL
+# ============================================
+
+# ===== ÉTAPE 1 : Supprimer les anciennes lignes de données =====
+print("\n🗑️  Suppression des anciennes lignes...")
+for row in range(ligne_total - 1, ligne_recap, -1):
+    ws.delete_rows(row)
+
+# À ce stade, l'ancienne ligne TOTAL (ligne_total) a glissé à ligne_recap + 1
+
+# ===== ÉTAPE 2 : Insérer le nombre exact de lignes de données =====
+if nb_lignes_finales > 0:
+    print(f"📝 Insertion de {nb_lignes_finales} nouvelles lignes...")
+    inserer_lignes(ws, ligne_recap + 1, nb_lignes_finales)
+
+# ===== ÉTAPE 3 : Écrire les données triées =====
+print("📝 Écriture des données triées...")
+for i, data in enumerate(dftemp_trie):
+    row = ligne_recap + 1 + i
+    ws.cell(row=row, column=2, value=data['compte'])
+    ws.cell(row=row, column=3, value=data['beneficiaire'])
+    ws.cell(row=row, column=4, value=data['secteur'])
+    ws.cell(row=row, column=5, value=data['montant'])
+
+# ===== ÉTAPE 4 : Mettre à jour la VRAIE ligne TOTAL, au bon endroit =====
+# Après suppression + insertion, la ligne TOTAL se trouve maintenant ici :
+ligne_total_actuelle = ligne_recap + 1 + nb_lignes_finales
+ws.cell(row=ligne_total_actuelle, column=4, value="TOTAL")
+ws.cell(row=ligne_total_actuelle, column=5, value=montant_total_general)
+
+print(f"✅ {nb_lignes_finales} lignes écrites, total = {montant_total_general}")
+
+# ============================================
+# 9. SAUVEGARDE
+# ============================================
+wb.save(fichier_excel)
+print("\n✅ Fichier sauvegardé avec succès!")
+
+# ============================================
+# 10. APERÇU
+# ============================================
+print("\n" + "="*60)
+print("📋 APERÇU DES DONNÉES CONSOLIDÉES (triées par bénéficiaire)")
+print("="*60)
+df_resultat = pd.DataFrame(dftemp_trie)[['compte', 'beneficiaire', 'secteur', 'montant', 'statut']]
+print(df_resultat.to_string(index=False))
+print("="*60)
+print(f"✅ Consolidation terminée : {nb_lignes_finales} lignes, total = {montant_total_general}")
+print("="*60)
