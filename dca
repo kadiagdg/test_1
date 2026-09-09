@@ -1,0 +1,189 @@
+import pandas as pd
+from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
+
+# ============================================
+# 1. CHARGEMENT DU FICHIER EXCEL
+# ============================================
+fichier_excel = "votre_fichier.xlsx"
+wb = load_workbook(fichier_excel)
+ws = wb.active
+
+# ============================================
+# 2. PARAMÈTRES (À ADAPTER)
+# ============================================
+ligne_recap = 5    # Numéro de la ligne "recap"
+ligne_total = 20   # Numéro de la ligne "TOTAL"
+
+# ============================================
+# 3. FONCTION D'INSERTION DE LIGNES
+# ============================================
+def inserer_lignes(ws, position, nb_lignes):
+    """Insère nb_lignes à la position donnée"""
+    for i in range(nb_lignes):
+        ws.insert_rows(position + i)
+
+# ============================================
+# 4. RÉCUPÉRATION DES LIGNES EXISTANTES
+# ============================================
+comptes_existants = {}
+lignes_existantes = []
+
+print("📥 Récupération des lignes existantes...")
+
+for row in range(ligne_recap + 1, ligne_total):
+    compte = ws.cell(row=row, column=2).value
+    beneficiaire = ws.cell(row=row, column=3).value
+    secteur = ws.cell(row=row, column=4).value
+    montant = ws.cell(row=row, column=5).value
+    
+    if compte is None:
+        continue
+    
+    if beneficiaire:
+        cle = (str(compte).strip().upper(), str(beneficiaire).strip().upper())
+    else:
+        cle = (str(compte).strip().upper(), "")
+    
+    comptes_existants[cle] = {
+        'row': row,
+        'montant': montant if montant else 0,
+        'secteur': secteur,
+        'compte': compte,
+        'beneficiaire': beneficiaire
+    }
+    
+    lignes_existantes.append({
+        'compte': compte,
+        'beneficiaire': beneficiaire,
+        'secteur': secteur,
+        'montant': montant if montant else 0
+    })
+
+print(f"✅ {len(comptes_existants)} lignes existantes récupérées")
+
+# ============================================
+# 5. CHARGEMENT DE recapdf
+# ============================================
+recapdf = pd.DataFrame({
+    'compte': ['C001', 'C002', 'C003', 'C004', 'C005', 'C006', 'C007'],
+    'bénéficiaire': ['Jean Dupont', 'Marie Martin', 'Paul Durand', 'Sophie Petit', 
+                     'Luc Bernard', 'Emma Robert', 'Alice Moreau'],
+    'secteur': ['A', 'B', 'A', 'C', 'B', 'A', 'B'],
+    'somme1': [1000, 2000, 1500, 3000, 2500, 1800, 2200]
+})
+
+print(f"📊 recapdf chargé : {len(recapdf)} lignes")
+
+# ============================================
+# 6. TRAITEMENT DE recapdf POUR CRÉER dftemp
+# ============================================
+dftemp = []
+
+print("🔄 Traitement des données...")
+
+for index, row in recapdf.iterrows():
+    compte = row['compte']
+    beneficiaire = row['bénéficiaire']
+    
+    if pd.isna(beneficiaire) or beneficiaire == '':
+        cle = (str(compte).strip().upper(), "")
+    else:
+        cle = (str(compte).strip().upper(), str(beneficiaire).strip().upper())
+    
+    if cle in comptes_existants:
+        # Cas existant
+        montant_excel = comptes_existants[cle]['montant']
+        montant_total = montant_excel + row['somme1']
+        
+        dftemp.append({
+            'compte': compte,
+            'beneficiaire': beneficiaire,
+            'secteur': row['secteur'],
+            'montant': montant_total,
+            'statut': 'existant',
+            'ligne_excel': comptes_existants[cle]['row']
+        })
+    else:
+        # Cas nouveau
+        dftemp.append({
+            'compte': compte,
+            'beneficiaire': beneficiaire,
+            'secteur': row['secteur'],
+            'montant': row['somme1'],
+            'statut': 'nouveau',
+            'ligne_excel': None
+        })
+
+print(f"✅ {len(dftemp)} lignes traitées")
+print(f"   - {sum(1 for x in dftemp if x['statut'] == 'existant')} lignes existantes")
+print(f"   - {sum(1 for x in dftemp if x['statut'] == 'nouveau')} nouvelles lignes")
+
+# ============================================
+# 7. TRI DES DONNÉES PAR BÉNÉFICIAIRE
+# ============================================
+print("🔤 Tri des données par bénéficiaire...")
+dftemp_trie = sorted(dftemp, key=lambda x: str(x['beneficiaire']).upper())
+
+# ============================================
+# 8. CALCUL DES ESPACES
+# ============================================
+espace_disponible = (ligne_total - ligne_recap - 1)
+nb_lignes_finales = len(dftemp_trie)
+
+print(f"\n📊 Statistiques :")
+print(f"   - Espace disponible : {espace_disponible} lignes")
+print(f"   - Nombre total final : {nb_lignes_finales} lignes")
+
+# ============================================
+# 9. ÉCRITURE DANS LE FICHIER EXCEL
+# ============================================
+
+# ===== ÉTAPE 1 : Supprimer toutes les lignes existantes =====
+print("\n🗑️  Suppression des anciennes lignes...")
+for row in range(ligne_total - 1, ligne_recap, -1):
+    ws.delete_rows(row)
+
+# ===== ÉTAPE 2 : Insérer le nombre exact de lignes =====
+nb_lignes_a_inserer = nb_lignes_finales
+if nb_lignes_a_inserer > 0:
+    print(f"📝 Insertion de {nb_lignes_a_inserer} nouvelles lignes...")
+    inserer_lignes(ws, ligne_recap + 1, nb_lignes_a_inserer)
+
+# ===== ÉTAPE 3 : Écrire TOUTES les données triées =====
+print("📝 Écriture des données triées...")
+for i, data in enumerate(dftemp_trie):
+    row = ligne_recap + 1 + i
+    ws.cell(row=row, column=2, value=data['compte'])        # Colonne B
+    ws.cell(row=row, column=3, value=data['beneficiaire'])  # Colonne C
+    ws.cell(row=row, column=4, value=data['secteur'])       # Colonne D
+    ws.cell(row=row, column=5, value=data['montant'])       # Colonne E
+
+# ===== ÉTAPE 4 : Mettre à jour la ligne TOTAL =====
+ws.cell(row=ligne_recap, column=5, value=f"TOTAL: {nb_lignes_finales} lignes")
+
+print(f"✅ {nb_lignes_finales} lignes écrites")
+
+# ============================================
+# 10. SAUVEGARDE
+# ============================================
+wb.save(fichier_excel)
+print("\n✅ Fichier sauvegardé avec succès!")
+
+# ============================================
+# 11. AFFICHAGE DU RÉSULTAT
+# ============================================
+print("\n" + "="*60)
+print("📋 APERÇU DES DONNÉES CONSOLIDÉES (triées par bénéficiaire)")
+print("="*60)
+
+df_resultat = pd.DataFrame(dftemp_trie)
+df_resultat = df_resultat[['compte', 'beneficiaire', 'secteur', 'montant', 'statut']]
+print(df_resultat.to_string(index=False))
+
+print("\n" + "="*60)
+print(f"✅ Consolidation terminée avec succès!")
+print(f"📊 Total : {len(dftemp_trie)} lignes dans le fichier Excel")
+print(f"🔄 {sum(1 for x in dftemp_trie if x['statut'] == 'existant')} lignes mises à jour")
+print(f"➕ {sum(1 for x in dftemp_trie if x['statut'] == 'nouveau')} nouvelles lignes ajoutées")
+print("="*60)
